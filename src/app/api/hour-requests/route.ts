@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { handler, audit, STAFF } from '@/lib/api';
+import { hoursSummary } from '@/lib/hours';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const GET = handler([], async ({ db, auth, req }) => {
@@ -8,7 +9,15 @@ export const GET = handler([], async ({ db, auth, req }) => {
   if (auth.role === 'CUSTOMER') rows = rows.filter(r => r.customerId === auth.customerId);
   for (const k of ['ticketId', 'status', 'customerId'] as const) { const v = sp.get(k); if (v) rows = rows.filter(r => r[k] === v); }
   const users = await db.list('Users');
-  return { rows: rows.reverse().map(r => ({ ...r, requestedByName: users.find(u => u.id === r.requestedBy)?.name || r.requestedBy })) };
+  const out: Record<string, unknown> = { me: { id: auth.uid, role: auth.role }, rows: rows.reverse().map(r => ({ ...r, requestedByName: users.find(u => u.id === r.requestedBy)?.name || r.requestedBy })) };
+  // Ticket screen needs the balance too: return it here so the panel makes ONE call instead of three (me + requests + hours).
+  const tid = sp.get('ticketId');
+  if (tid) {
+    const t = await db.get('Tickets', tid);
+    if (t && (auth.role !== 'CUSTOMER' || t.customerId === auth.customerId))
+      out.summary = hoursSummary((await db.list('HoursLedger')).filter(l => l.customerId === t.customerId));
+  }
+  return out;
 });
 const body = z.object({ ticketId: z.string(), hours: z.number().positive().max(500), reason: z.string().min(3) });
 /** Only the assigned user (or an admin) may raise a request for a ticket. */

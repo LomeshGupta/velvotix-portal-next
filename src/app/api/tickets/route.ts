@@ -18,7 +18,6 @@ export const POST = handler([], async c => {
   if (!customerId) return Response.json({ message: 'Customer is required.' }, { status: 400 });
   const now = new Date().toISOString();
   const t = await c.db.insert('Tickets', { ...b, customerId, status: 'Open', createdAt: now, updatedAt: now });
-  await c.db.update('Tickets', t.id, { number: t.id });
   await c.db.insert('TicketActivities', { ticketId: t.id, type: 'Ticket created', detail: b.subject, userId: c.auth.uid, createdAt: now });
   await c.db.insert('Notifications', { userId: '', type: 'TICKET_CREATED', title: `Ticket ${t.id} created`, body: b.subject, read: 'false', createdAt: now });
   await audit(c, 'CREATE', 'Tickets', t.id);

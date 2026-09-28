@@ -347,6 +347,15 @@ type Ctx = {
               { status: 401 },
             );
           }
+          /** Enforce enable/disable immediately (not only at next login). Uses the store's cached Users list (~1 read / 15s). */
+          const account = await (await db()).get("Users", auth.uid);
+          if (!account || account.active !== "true") {
+            return NextResponse.json(
+              { message: "This account is disabled." },
+              { status: 401 },
+            );
+          }
+          auth = { uid: auth.uid, role: account.role, customerId: account.customerId || "" };
           if (roles.length > 0 && !roles.includes(auth.role)) {
             return NextResponse.json(
               { message: "Not permitted." },

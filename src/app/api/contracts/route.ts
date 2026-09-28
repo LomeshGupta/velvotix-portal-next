@@ -112,9 +112,21 @@ export const GET = handler([...STAFF, "CUSTOMER"], async ({ db, auth }) => {
     };
   });
 
+  /**
+   * Staff also get customer names + a small customer list in the same response,
+   * so the contracts screen needs only one request.
+   */
+  if (auth.role === "CUSTOMER") {
+    return { total: result.length, rows: result };
+  }
+
+  const customers = await db.list("Customers");
+  const names = new Map(customers.map((customer) => [customer.id, customer.companyName]));
+
   return {
     total: result.length,
-    rows: result,
+    rows: result.map((row) => ({ ...row, customerName: names.get(row.customerId) || row.customerId })),
+    customers: customers.map((customer) => ({ id: customer.id, companyName: customer.companyName })),
   };
 });
 

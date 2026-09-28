@@ -687,6 +687,7 @@ export default function InvoicePrint({ params }: InvoicePrintProps) {
             </Typography>
 
             <MetaRow label="Invoice no:" value={invoiceNumber} />
+            <MetaRow label="Ext. doc no:" value={valueOrDash(i.externalDocNo)} />
 
             <MetaRow label="Invoice date:" value={invoiceDate} />
 

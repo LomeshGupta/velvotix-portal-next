@@ -4,12 +4,14 @@ import { Alert, Box, Button, Card, CardContent, Chip, LinearProgress, TextField,
 type Row = Record<string, string>;
 const json = (m: string, b: unknown) => ({ method: m, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
 export default function HoursPanel({ ticket }: { ticket: Row }) {
-  const [me, setMe] = useState<Row | null>(null); const [reqs, setReqs] = useState<Row[]>([]); const [sm, setSm] = useState<{ added: number; used: number; remaining: number; validTill: string; expired: boolean } | null>(null);
+  const [me, setMe] = useState<{ id: string; role: string } | null>(null); const [reqs, setReqs] = useState<Row[]>([]); const [sm, setSm] = useState<{ added: number; used: number; remaining: number; validTill: string; expired: boolean } | null>(null);
   const [hours, setHours] = useState(''); const [reason, setReason] = useState(''); const [err, setErr] = useState('');
+  // ONE request: the requests list, the customer's hour balance and the current user all come back together.
   const load = useCallback(async () => {
-    const [a, b, c] = await Promise.all([fetch('/api/auth/me'), fetch(`/api/hour-requests?ticketId=${ticket.id}`), fetch(`/api/customers/${ticket.customerId}/hours`)]);
-    if (a.ok) setMe(await a.json()); if (b.ok) setReqs((await b.json()).rows); if (c.ok) setSm((await c.json()).summary);
-  }, [ticket.id, ticket.customerId]);
+    const r = await fetch(`/api/hour-requests?ticketId=${ticket.id}`);
+    if (!r.ok) return;
+    const j = await r.json(); setMe(j.me); setReqs(j.rows); if (j.summary) setSm(j.summary);
+  }, [ticket.id]);
   useEffect(() => { load(); }, [load]);
   const decide = async (id: string, decision: string) => { const r = await fetch(`/api/hour-requests/${id}`, json('PUT', { decision })); if (r.ok) { setErr(''); load(); } else setErr((await r.json()).message); };
   const raise = async () => { const r = await fetch('/api/hour-requests', json('POST', { ticketId: ticket.id, hours: Number(hours), reason })); if (r.ok) { setHours(''); setReason(''); setErr(''); load(); } else setErr((await r.json()).message || 'Request failed.'); };
