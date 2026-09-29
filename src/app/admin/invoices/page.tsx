@@ -16,7 +16,7 @@ const paid = (i: Row) => Number(i.amountPaid) > 0 || ['Paid', 'Partially Paid'].
 
 export default function Invoices() {
   const [d, setD] = useState<Data | null>(null); const [cid, setCid] = useState(''); const [st, setSt] = useState(''); const [q, setQ] = useState(''); const [tab, setTab] = useState(0);
-  const [open, setOpen] = useState(false); const [h, setH] = useState({ customerId: '', externalDocNo: '', date: today(), dueDate: today(), placeOfSupply: '', billingAddress: '' }); const [lines, setLines] = useState([{ ...blank }]);
+  const [open, setOpen] = useState(false); const [h, setH] = useState({ customerId: '', externalDocNo: '', orderDate: '', date: today(), dueDate: today(), placeOfSupply: '', billingAddress: '' }); const [lines, setLines] = useState([{ ...blank }]);
   const [pay, setPay] = useState<Row | null>(null); const [amt, setAmt] = useState(0); const [mode, setMode] = useState('Bank Transfer'); const [del, setDel] = useState<Row | null>(null);
   const [msg, setMsg] = useState(''); const [formErr, setFormErr] = useState('');
 
@@ -33,7 +33,7 @@ export default function Invoices() {
 
   const openForm = () => {
     const c = d?.customers.find(x => x.id === cid);
-    setH({ customerId: cid, externalDocNo: '', date: today(), dueDate: today(), placeOfSupply: c?.state || '', billingAddress: c?.billingAddress || '' }); setFormErr(''); setOpen(true);
+    setH({ customerId: cid, externalDocNo: '', orderDate: '', date: today(), dueDate: today(), placeOfSupply: c?.state || '', billingAddress: c?.billingAddress || '' }); setFormErr(''); setOpen(true);
   };
   const pickCustomer = (id: string) => { const c = d?.customers.find(x => x.id === id); setH({ ...h, customerId: id, placeOfSupply: c?.state || '', billingAddress: c?.billingAddress || '' }); };
   const create = async () => {
@@ -69,16 +69,16 @@ export default function Invoices() {
       </Box>
 
       {tab === 0 && <Paper sx={{ overflowX: 'auto' }}><Table size="small">
-        <TableHead><TableRow>{['Invoice', 'Ext. doc no.', 'Customer', 'Date', 'Due', 'Total', 'Paid', 'Balance', 'Status', ''].map(x => <TableCell key={x}>{x}</TableCell>)}</TableRow></TableHead>
+        <TableHead><TableRow>{['Invoice', 'Ext. doc no.', 'Order date', 'Customer', 'Date', 'Due', 'Total', 'Paid', 'Balance', 'Status', ''].map(x => <TableCell key={x}>{x}</TableCell>)}</TableRow></TableHead>
         <TableBody>{invs.map(i => <TableRow key={i.id} hover>
           <TableCell><Link href={`/admin/invoices/${i.id}`} style={{ color: 'inherit', fontWeight: 600 }}>{i.id}</Link></TableCell>
-          <TableCell>{i.externalDocNo || '-'}</TableCell><TableCell>{i.customerName}</TableCell><TableCell>{i.date}</TableCell><TableCell>{i.dueDate}</TableCell>
+          <TableCell>{i.externalDocNo || '-'}</TableCell><TableCell>{i.orderDate || '-'}</TableCell><TableCell>{i.customerName}</TableCell><TableCell>{i.date}</TableCell><TableCell>{i.dueDate}</TableCell>
           <TableCell align="right">{inr(i.grandTotal)}</TableCell><TableCell align="right">{inr(i.amountPaid)}</TableCell><TableCell align="right">{inr(i.balanceDue)}</TableCell>
           <TableCell><Chip size="small" label={i.status} color={i.status === 'Paid' ? 'success' : i.status === 'Cancelled' ? 'error' : 'default'} /></TableCell>
           <TableCell sx={{ whiteSpace: 'nowrap' }}>
             {Number(i.balanceDue) > 0 && i.status !== 'Cancelled' && <Button size="small" onClick={() => { setPay(i); setAmt(Number(i.balanceDue)); }}>Record payment</Button>}
             {!paid(i) && <Button size="small" color="error" onClick={() => setDel(i)}>Delete</Button>}</TableCell></TableRow>)}
-          {!invs.length && <TableRow><TableCell colSpan={10} align="center" sx={{ py: 4, color: 'text.secondary' }}>No invoices found.</TableCell></TableRow>}</TableBody></Table></Paper>}
+          {!invs.length && <TableRow><TableCell colSpan={11} align="center" sx={{ py: 4, color: 'text.secondary' }}>No invoices found.</TableCell></TableRow>}</TableBody></Table></Paper>}
 
       {tab === 1 && <>
         {!cid && <Paper sx={{ overflowX: 'auto' }}><Typography sx={{ p: 2 }} fontWeight={600}>Customer-wise summary</Typography><Table size="small">
@@ -94,7 +94,8 @@ export default function Invoices() {
           {formErr && <Alert severity="error">{formErr}</Alert>}
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
             <TextField select label="Customer" value={h.customerId} onChange={e => pickCustomer(e.target.value)} sx={{ minWidth: 260, flex: 1 }}>{d?.customers.map(c => <MenuItem key={c.id} value={c.id}>{c.companyName}</MenuItem>)}</TextField>
-            <TextField required label="External document no." helperText="Customer PO / reference number" value={h.externalDocNo} onChange={e => setH({ ...h, externalDocNo: e.target.value })} sx={{ minWidth: 220 }} /></Box>
+            <TextField required label="External document no." helperText="Customer PO / reference number" value={h.externalDocNo} onChange={e => setH({ ...h, externalDocNo: e.target.value })} sx={{ minWidth: 220 }} />
+            <TextField type="date" label="Order date" helperText="Date of the external document" InputLabelProps={{ shrink: true }} value={h.orderDate} onChange={e => setH({ ...h, orderDate: e.target.value })} sx={{ minWidth: 180 }} /></Box>
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
             <TextField type="date" label="Date" InputLabelProps={{ shrink: true }} value={h.date} onChange={e => setH({ ...h, date: e.target.value })} />
             <TextField type="date" label="Due" InputLabelProps={{ shrink: true }} value={h.dueDate} onChange={e => setH({ ...h, dueDate: e.target.value })} />

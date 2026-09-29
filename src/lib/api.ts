@@ -56,6 +56,7 @@ export const STAFF_WRITE = ["SUPER_ADMIN", "ADMIN", "SALES"] as const;
     companyName: "Seed Customer Pvt Ltd (DEV)",
     type: "B2B",
     email: "client@example.com",
+    cin: "U74999HR2020PTC000001",
     status: "Active",
     state: "Haryana",
     country: "India",
@@ -82,6 +83,7 @@ export const STAFF_WRITE = ["SUPER_ADMIN", "ADMIN", "SALES"] as const;
     state: "Haryana",
     country: "India",
     invoicePrefix: "INV",
+    cin: "U74999HR2020PTC000000",
   });
   const customers = await s.list("Customers");
   if (!customers.length) {
@@ -95,6 +97,7 @@ export const STAFF_WRITE = ["SUPER_ADMIN", "ADMIN", "SALES"] as const;
     email: "demo2@example.com",
     state: "Maharashtra",
     gstin: "DEMO27AAAAA0000A1Z5",
+    cin: "U51909MH2019PTC000002",
     status: "Active",
     customerSince: day(-200),
   })) as RowWithId;
@@ -312,7 +315,7 @@ type Ctx = {
     (roles: readonly string[] | null, fn: (context: Ctx) => Promise<unknown>) =>
     async (
       req: Request,
-      ctx: { params?: Record<string, string> },
+      ctx: { params?: Promise<Record<string, string>> | Record<string, string> },
     ): Promise<Response> => {
       try {
         let auth: Auth | undefined;
@@ -367,7 +370,7 @@ type Ctx = {
           db: await db(),
           auth: auth as Auth,
           req,
-          params: ctx?.params ?? {},
+          params: (await ctx?.params) ?? {},
         };
         const result = await fn(context);
         return result instanceof Response ? result : NextResponse.json(result);

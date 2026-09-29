@@ -4,7 +4,7 @@ import { calcInvoice } from '@/lib/gst';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const body = z.object({
-  customerId: z.string(), externalDocNo: z.string().trim().min(1, 'External document no. is required'), date: z.string(), dueDate: z.string(), placeOfSupply: z.string().min(1), billingAddress: z.string().optional(), paymentTerms: z.string().optional(), notes: z.string().optional(),
+  customerId: z.string(), externalDocNo: z.string().trim().min(1, 'External document no. is required'), orderDate: z.string().optional(), date: z.string(), dueDate: z.string(), placeOfSupply: z.string().min(1), billingAddress: z.string().optional(), paymentTerms: z.string().optional(), notes: z.string().optional(),
   items: z.array(z.object({ description: z.string().min(1), hsnSac: z.string().optional(), qty: z.number().positive(), rate: z.number().min(0), discount: z.number().min(0).optional(), taxPercent: z.number().min(0).max(100) })).min(1),
 });
 export const GET = handler(STAFF, async ({ db, auth, req }) => {
@@ -20,10 +20,12 @@ export const POST = handler(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTS'], async c => {
   const cust = await c.db.get('Customers', b.customerId);
   if (!cust) return Response.json({ message: 'Customer not found.' }, { status: 404 });
   const company = await c.db.get('Company', 'COMPANY');
+  if (!company?.cin) return Response.json({ message: 'Your company CIN is missing. Add it under Settings before raising invoices.' }, { status: 400 });
+  if (cust.type === 'B2B' && !cust.cin) return Response.json({ message: `${cust.companyName} has no CIN. Add it on the customer profile before raising an invoice.` }, { status: 400 });
   const intra = !!company?.state && company.state.toLowerCase() === b.placeOfSupply.toLowerCase();
   const t = calcInvoice(b.items, intra);
   const inv = await c.db.insert('Invoices', { customerId: b.customerId, date: b.date, dueDate: b.dueDate, placeOfSupply: b.placeOfSupply, gstin: cust.gstin,
-    externalDocNo: b.externalDocNo, paymentTerms: b.paymentTerms, billingAddress: b.billingAddress || cust.billingAddress, status: 'Issued', subtotal: String(t.subtotal), discount: String(t.discount), taxable: String(t.taxable), cgst: String(t.cgst), sgst: String(t.sgst),
+    externalDocNo: b.externalDocNo, orderDate: b.orderDate, customerCin: cust.cin, paymentTerms: b.paymentTerms, billingAddress: b.billingAddress || cust.billingAddress, status: 'Issued', subtotal: String(t.subtotal), discount: String(t.discount), taxable: String(t.taxable), cgst: String(t.cgst), sgst: String(t.sgst),
     igst: String(t.igst), roundOff: String(t.roundOff), grandTotal: String(t.grandTotal), amountPaid: '0', balanceDue: String(t.grandTotal), notes: b.notes });
   // number is filled by the store on insert; all line items go in with a single append call
   await c.db.insertMany('InvoiceItems', t.lines.map(l => ({ invoiceId: inv.id, description: l.description, hsnSac: l.hsnSac, qty: String(l.qty), rate: String(l.rate),

@@ -333,6 +333,8 @@ export default function InvoicePrint({ params }: InvoicePrintProps) {
      INVOICE VALUES
   ============================================================ */
 
+  const customerCin = i.customerCin || u.cin;
+
   const invoiceNumber = valueOrDash(i.number || i.invoiceNumber || i.id);
 
   const invoiceDate = formatDate(i.date || i.invoiceDate);
@@ -651,6 +653,18 @@ export default function InvoicePrint({ params }: InvoicePrintProps) {
               </Typography>
             )}
 
+            {c.cin && (
+              <Typography
+                sx={{
+                  fontSize: 8.5,
+                  lineHeight: 1.5,
+                  color: "#374151",
+                }}
+              >
+                <b>CIN:</b> {c.cin}
+              </Typography>
+            )}
+
             {companyContact && (
               <Typography
                 sx={{
@@ -688,6 +702,8 @@ export default function InvoicePrint({ params }: InvoicePrintProps) {
 
             <MetaRow label="Invoice no:" value={invoiceNumber} />
             <MetaRow label="Ext. doc no:" value={valueOrDash(i.externalDocNo)} />
+
+            <MetaRow label="Order date:" value={formatDate(i.orderDate)} />
 
             <MetaRow label="Invoice date:" value={invoiceDate} />
 
@@ -785,6 +801,19 @@ export default function InvoicePrint({ params }: InvoicePrintProps) {
                 GSTIN: {c.gstin}
               </Typography>
             )}
+
+            {c.cin && (
+              <Typography
+                sx={{
+                  fontSize: 8.8,
+                  lineHeight: 1.5,
+                  color: "#374151",
+                  mt: 0.2,
+                }}
+              >
+                <b>CIN:</b> {c.cin}
+              </Typography>
+            )}
           </Box>
 
           {/* BILL TO / SHIP TO */}
@@ -863,6 +892,19 @@ export default function InvoicePrint({ params }: InvoicePrintProps) {
                 }}
               >
                 GSTIN: {u.gstin}
+              </Typography>
+            )}
+
+            {customerCin && (
+              <Typography
+                sx={{
+                  fontSize: 8.8,
+                  lineHeight: 1.5,
+                  color: "#374151",
+                  mt: 0.2,
+                }}
+              >
+                <b>CIN:</b> {customerCin}
               </Typography>
             )}
 

@@ -18,7 +18,7 @@ export default function CustomerDetail({ params }: { params: { id: string } }) {
   const addHours = async () => { const r = await fetch(`/api/customers/${id}/hours`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hours: Number(h.hours), validTill: h.validTill, note: h.note }) }); if (r.ok) { setAdd(false); setH({ hours: '', validTill: '', note: '' }); load(); } else setErr('Hours could not be added (admin access and a valid date are required).'); };
   if (!c) return <Box p={3}>Loading...</Box>;
   const s = hrs?.summary, out = invs.reduce((a, i) => a + Number(i.balanceDue || 0), 0);
-  const fields: [string, string][] = [['Customer ID', c.id], ['Type', c.type], ['Contact person', c.contactPerson], ['Email', c.email], ['Phone', c.phone], ['Alternate phone', c.altPhone], ['GSTIN', c.gstin], ['PAN', c.pan], ['Customer since', c.customerSince], ['City', c.city], ['State', c.state], ['Country', c.country], ['PIN', c.pin]];
+  const fields: [string, string][] = [['Customer ID', c.id], ['Type', c.type], ['Contact person', c.contactPerson], ['Email', c.email], ['Phone', c.phone], ['Alternate phone', c.altPhone], ['GSTIN', c.gstin], ['PAN', c.pan], ['CIN', c.cin], ['Customer since', c.customerSince], ['City', c.city], ['State', c.state], ['Country', c.country], ['PIN', c.pin]];
   return (
     <Box sx={{ p: 3, display: 'grid', gap: 2 }}>
       <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}><Button component={Link} href="/admin/customers">Back</Button><Typography variant="h5" fontWeight={800} sx={{ flexGrow: 1 }}>{c.companyName}</Typography>

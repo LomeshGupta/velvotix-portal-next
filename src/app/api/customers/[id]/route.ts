@@ -1,8 +1,9 @@
 import { handler, audit, STAFF, STAFF_WRITE } from '@/lib/api';
 import { z } from 'zod';
+import { cinField } from '@/lib/cin';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-const upd = z.object({ companyName: z.string(), type: z.enum(['B2B', 'B2C']), gstin: z.string(), pan: z.string(), contactPerson: z.string(), email: z.string().email(),
+const upd = z.object({ companyName: z.string(), type: z.enum(['B2B', 'B2C']), gstin: z.string(), pan: z.string(), cin: cinField, contactPerson: z.string(), email: z.string().email(),
   phone: z.string(), altPhone: z.string(), billingAddress: z.string(), shippingAddress: z.string(), city: z.string(), state: z.string(), country: z.string(),
   pin: z.string(), status: z.enum(['Active', 'Inactive']), notes: z.string() }).partial();
 export const GET = handler(STAFF, async ({ db, auth, params }) => {
@@ -11,7 +12,11 @@ export const GET = handler(STAFF, async ({ db, auth, params }) => {
   return r ?? Response.json({ message: 'Customer not found.' }, { status: 404 });
 });
 export const PUT = handler(STAFF_WRITE, async c => {
-  const r = await c.db.update('Customers', c.params.id, upd.parse(await c.req.json()));
+  const b = upd.parse(await c.req.json());
+  const cur = await c.db.get('Customers', c.params.id);
+  if (!cur) return Response.json({ message: 'Customer not found.' }, { status: 404 });
+  if ((b.type ?? cur.type) === 'B2B' && !(b.cin ?? cur.cin)) return Response.json({ message: 'CIN is required for B2B customers.' }, { status: 400 });
+  const r = await c.db.update('Customers', c.params.id, b);
   await audit(c, 'UPDATE', 'Customers', r.id);
   return r;
 });

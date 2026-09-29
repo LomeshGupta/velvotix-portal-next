@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { handler, audit, STAFF, STAFF_WRITE } from '@/lib/api';
+import { cinField } from '@/lib/cin';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const customerSchema = z.object({
-  companyName: z.string().min(1), type: z.enum(['B2B', 'B2C']).default('B2B'), gstin: z.string().optional(), pan: z.string().optional(),
+  companyName: z.string().min(1), type: z.enum(['B2B', 'B2C']).default('B2B'), gstin: z.string().optional(), pan: z.string().optional(), cin: cinField.optional(),
   contactPerson: z.string().optional(), email: z.string().email(), phone: z.string().optional(), altPhone: z.string().optional(),
   billingAddress: z.string().optional(), shippingAddress: z.string().optional(), city: z.string().optional(), state: z.string().optional(),
   country: z.string().optional(), pin: z.string().optional(), status: z.enum(['Active', 'Inactive']).default('Active'), notes: z.string().optional(),
@@ -18,7 +19,9 @@ export const GET = handler(STAFF, async ({ db, auth, req }) => {
   return { total: rows.length, rows: rows.slice((p - 1) * n, p * n) };
 });
 export const POST = handler(STAFF_WRITE, async c => {
-  const r = await c.db.insert('Customers', { ...customerSchema.parse(await c.req.json()), customerSince: new Date().toISOString().slice(0, 10) });
+  const b = customerSchema.parse(await c.req.json());
+  if (b.type === 'B2B' && !b.cin) return Response.json({ message: 'CIN is required for B2B customers.' }, { status: 400 });
+  const r = await c.db.insert('Customers', { ...b, customerSince: new Date().toISOString().slice(0, 10) });
   await audit(c, 'CREATE', 'Customers', r.id);
   return Response.json(r, { status: 201 });
 });
