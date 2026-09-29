@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { handler, audit } from '@/lib/api';
+import { notify, FINANCE } from '@/lib/notify';
 export const runtime = 'nodejs';
 const body = z.object({ date: z.string(), amount: z.number().positive(), mode: z.enum(['Bank Transfer', 'UPI', 'Cash', 'Cheque', 'Card', 'Other']), reference: z.string().optional(), notes: z.string().optional() });
 export const POST = handler(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTS'], async c => {
@@ -12,7 +13,9 @@ export const POST = handler(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTS'], async c => {
   const pay = await c.db.insert('Payments', { invoiceId: inv.id, customerId: inv.customerId, date: b.date, amount: String(b.amount), mode: b.mode, reference: b.reference, notes: b.notes });
   const paid = Math.round((Number(inv.amountPaid) + b.amount) * 100) / 100, due = Math.round((Number(inv.grandTotal) - paid) * 100) / 100;
   const updated = await c.db.update('Invoices', inv.id, { amountPaid: String(paid), balanceDue: String(due), status: due <= 0 ? 'Paid' : 'Partially Paid' });
-  await c.db.insert('Notifications', { userId: '', type: 'PAYMENT_RECEIVED', title: `Payment received for ${inv.id}`, body: String(b.amount), read: 'false', createdAt: new Date().toISOString() });
+  const amt = `INR ${b.amount.toLocaleString('en-IN')}`;
+  await notify(c.db, { roles: FINANCE }, { type: 'PAYMENT_RECEIVED', title: `Payment received for ${inv.id}`, body: `${amt} via ${b.mode}`, link: '/admin/invoices' }, { except: c.auth.uid });
+  await notify(c.db, { customerId: inv.customerId }, { type: 'PAYMENT_RECEIVED', title: `Payment received: ${amt}`, body: `Against invoice ${inv.externalDocNo || inv.id}. Thank you!` });
   await audit(c, 'PAYMENT', 'Invoices', inv.id);
   return Response.json({ payment: pay, invoice: updated }, { status: 201 });
 });

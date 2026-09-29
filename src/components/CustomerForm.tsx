@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField } from '@mui/material';
+import { Alert, Box, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField } from '@mui/material';
+import { Button } from '@/components/ui';
 type Row = Record<string, string>;
 const F: [string, string, string?][] = [['companyName', 'Company name'], ['type', 'Customer type', 'sel'], ['contactPerson', 'Contact person'], ['email', 'Email'], ['phone', 'Phone'], ['altPhone', 'Alternate phone'], ['gstin', 'GSTIN'], ['pan', 'PAN'], ['cin', 'CIN (Corporate Identification No.)'],
   ['billingAddress', 'Billing address', 'area'], ['shippingAddress', 'Shipping address', 'area'], ['city', 'City'], ['state', 'State'], ['country', 'Country'], ['pin', 'PIN code'], ['status', 'Status', 'sel'], ['notes', 'Notes', 'area']];

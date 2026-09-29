@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { handler, audit, STAFF } from '@/lib/api';
 import { hoursSummary } from '@/lib/hours';
+import { notify } from '@/lib/notify';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const GET = handler([], async ({ db, auth, req }) => {
@@ -29,7 +30,7 @@ export const POST = handler(STAFF, async c => {
   const now = new Date().toISOString();
   const r = await c.db.insert('HourRequests', { customerId: t.customerId, ticketId: t.id, requestedBy: c.auth.uid, hours: String(b.hours), reason: b.reason, status: 'Pending', createdAt: now });
   await c.db.insert('TicketActivities', { ticketId: t.id, type: 'Hours requested', detail: `${b.hours}h`, userId: c.auth.uid, createdAt: now });
-  await c.db.insert('Notifications', { userId: '', type: 'HOURS_REQUEST', title: `Hours requested on ${t.id}`, body: b.reason, read: 'false', createdAt: now });
+  await notify(c.db, { customerId: t.customerId }, { type: 'HOURS_REQUEST', title: `Approval needed: ${b.hours}h on ${t.id}`, body: b.reason, link: `/portal/tickets/${t.id}` }, { except: c.auth.uid });
   await audit(c, 'REQUEST_HOURS', 'HourRequests', r.id);
   return Response.json(r, { status: 201 });
 });

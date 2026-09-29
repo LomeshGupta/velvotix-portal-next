@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { handler, audit } from '@/lib/api';
 import { hoursSummary } from '@/lib/hours';
+import { notify } from '@/lib/notify';
 export const runtime = 'nodejs';
 const body = z.object({ decision: z.enum(['Approved', 'Rejected']) });
 /** Approval by an admin OR the customer who owns the ticket. Approval deducts from the balance. */
@@ -19,6 +20,8 @@ export const PUT = handler([], async c => {
   }
   const upd = await c.db.update('HourRequests', r.id, { status: decision, decidedBy: c.auth.uid, decidedAt: now });
   await c.db.insert('TicketActivities', { ticketId: r.ticketId, type: `Hours ${decision.toLowerCase()}`, detail: `${r.hours}h`, userId: c.auth.uid, createdAt: now });
+  const n = { type: `HOURS_${decision.toUpperCase()}`, title: `${r.hours}h ${decision.toLowerCase()} on ${r.ticketId}`, body: r.reason, link: `/admin/tickets/${r.ticketId}` };
+  await notify(c.db, { users: [r.requestedBy], roles: ['SUPER_ADMIN', 'ADMIN'] }, n, { except: c.auth.uid });
   await audit(c, decision.toUpperCase(), 'HourRequests', r.id);
   return upd;
 });

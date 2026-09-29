@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Box, Button, Card, CardContent, Chip, LinearProgress, TextField, Typography } from '@mui/material';
+import { Alert, Box, Card, CardContent, Chip, LinearProgress, TextField, Typography } from '@mui/material';
+import { Button } from '@/components/ui';
 type Row = Record<string, string>;
 const json = (m: string, b: unknown) => ({ method: m, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
 export default function HoursPanel({ ticket }: { ticket: Row }) {

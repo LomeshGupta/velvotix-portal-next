@@ -12,6 +12,7 @@ import Description from '@mui/icons-material/Description';
 import ManageAccounts from '@mui/icons-material/ManageAccounts';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { InstallButton } from '@/components/PwaRegister';
+import NotificationBell, { detachPush } from '@/components/NotificationBell';
 import Brightness4 from '@mui/icons-material/Brightness4';
 import Logout from '@mui/icons-material/Logout';
 import { useToggleMode } from '../providers';
@@ -22,7 +23,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [open, setOpen] = useState(false); const [role, setRole] = useState('');
   useEffect(() => { fetch('/api/auth/me').then(async x => x.ok && setRole((await x.json()).role || '')); }, []);
   if (path === '/admin/login') return <>{children}</>;
-  const logout = async () => { await fetch('/api/auth/logout', { method: 'POST' }); r.push('/admin/login'); };
+  const logout = async () => { await detachPush(); await fetch('/api/auth/logout', { method: 'POST' }); r.push('/admin/login'); };
   const nav = (
     <Box sx={{ width: W }}>
       <Toolbar><Typography variant="h6" color="primary" fontWeight={800}>Velvotix <span style={{ color: '#ef6c00' }}>Admin</span></Typography></Toolbar>
@@ -34,7 +35,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <GlobalStyles styles={{ '@media print': { '.no-print': { display: 'none !important' }, main: { margin: '0 !important', padding: '0 !important' } } }} />
       <AppBar className="no-print" position="fixed" color="inherit" elevation={0} sx={{ ml: { md: `${W}px` }, width: { md: `calc(100% - ${W}px)` }, borderBottom: 1, borderColor: 'divider' }}>
         <Toolbar>{!desk && <IconButton onClick={() => setOpen(true)} aria-label="menu"><Menu /></IconButton>}<Box sx={{ flexGrow: 1 }} />
-          <InstallButton /><IconButton onClick={toggle} aria-label="toggle theme"><Brightness4 /></IconButton><IconButton onClick={logout} aria-label="logout"><Logout /></IconButton></Toolbar>
+          <InstallButton /><NotificationBell /><IconButton onClick={toggle} aria-label="toggle theme"><Brightness4 /></IconButton><IconButton onClick={logout} aria-label="logout"><Logout /></IconButton></Toolbar>
       </AppBar>
       <Drawer className="no-print" variant={desk ? 'permanent' : 'temporary'} open={desk || open} onClose={() => setOpen(false)} sx={{ '& .MuiDrawer-paper': { width: W } }}>{nav}</Drawer>
       <Box component="main" sx={{ flexGrow: 1, ml: { md: `${W}px` }, mt: 'calc(64px + env(safe-area-inset-top, 0px))', minWidth: 0 }}>{children}</Box>

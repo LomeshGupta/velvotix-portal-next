@@ -1,7 +1,8 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Paper, Snackbar, TextField, Typography } from '@mui/material';
+import { Box, Chip, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Paper, Snackbar, TextField, Typography } from '@mui/material';
+import { Button } from '@/components/ui';
 type T = { id: string; customerId: string; subject: string; priority: string; status: string; assignedTo: string };
 const STATUS = ['Open', 'Assigned', 'In Progress', 'Waiting for Customer', 'Resolved', 'Closed'];
 const PRI: Record<string, string> = { Critical: 'error.main', High: 'warning.main', Medium: 'info.main', Low: 'grey.500' };

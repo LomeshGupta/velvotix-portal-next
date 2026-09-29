@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { handler, audit, STAFF_WRITE } from '@/lib/api';
+import { notify } from '@/lib/notify';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const body = z.object({
@@ -18,6 +19,7 @@ export const PUT = handler(STAFF_WRITE, async c => {
     return Response.json({ message: 'A contract with this contract number already exists.' }, { status: 409 });
   const total = Number(m.amount || 0) + Number(m.tax || 0);
   const r = await c.db.update('SupportContracts', cur.id, { ...m, total: String(total), remainingHours: String(Math.max(0, Number(m.supportHours || 0) - Number(m.usedHours || 0))), renewalDate: m.endDate });
+  if (b.status === 'Cancelled' && cur.status !== 'Cancelled') await notify(c.db, { customerId: cur.customerId }, { type: 'CONTRACT', title: `Contract ${cur.contractNumber} cancelled`, body: 'Please contact Velvotix for details.' }, { except: c.auth.uid });
   await audit(c, b.status === 'Cancelled' ? 'CANCEL' : 'UPDATE', 'SupportContracts', cur.id);
   return r;
 });

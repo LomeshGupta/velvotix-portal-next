@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { handler, audit } from '@/lib/api';
+import { notify } from '@/lib/notify';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const GET = handler([], async ({ db, auth, params }) => {
@@ -24,6 +25,13 @@ export const PUT = handler(['SUPER_ADMIN', 'ADMIN', 'SUPPORT'], async c => {
   if (b.priority && b.priority !== old.priority) { patch.priority = b.priority; await log('Priority changed', `${old.priority} -> ${b.priority}`); }
   if (b.assignedTo !== undefined && b.assignedTo !== old.assignedTo) { patch.assignedTo = b.assignedTo; if (old.status === 'Open' && !b.status) patch.status = 'Assigned'; await log('Assigned', b.assignedTo); }
   const r = await c.db.update('Tickets', old.id, patch);
+  if (patch.status && patch.status !== old.status) {
+    const t = { type: 'TICKET_STATUS', title: `${old.id} is now ${patch.status}`, body: old.subject };
+    await notify(c.db, { customerId: old.customerId }, { ...t, link: `/portal/tickets/${old.id}` }, { except: c.auth.uid });
+    await notify(c.db, { users: [old.assignedTo] }, { ...t, link: `/admin/tickets/${old.id}` }, { except: c.auth.uid });
+  }
+  if (b.assignedTo && b.assignedTo !== old.assignedTo)
+    await notify(c.db, { users: [b.assignedTo] }, { type: 'TICKET_ASSIGNED', title: `Ticket ${old.id} assigned to you`, body: old.subject, link: `/admin/tickets/${old.id}` }, { except: c.auth.uid });
   await audit(c, 'UPDATE', 'Tickets', old.id);
   return r;
 });

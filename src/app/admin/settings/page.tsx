@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, Card, CardContent, Snackbar, TextField, Typography } from '@mui/material';
+import { Alert, Box, Card, CardContent, Snackbar, TextField, Typography } from '@mui/material';
+import { Button } from '@/components/ui';
 type Row = Record<string, string>;
 // [key, label, multiline?]
 const F: [string, string, boolean?][] = [

@@ -1,24 +1,27 @@
 'use client';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, MenuItem, Paper, Snackbar, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Typography } from '@mui/material';
+import { Alert, Box, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, MenuItem, Paper, Snackbar, Tab, Table, TableBody, TableCell, TableHead, TableRow, Tabs, TextField, Typography } from '@mui/material';
+import { Button, CardSkeleton, EmptyRow, TableSkeleton } from '@/components/ui';
 type Row = Record<string, string>;
 type Ent = { date: string; customerId: string; customerName: string; ref: string; extRef: string; type: string; debit: number; credit: number; balance: number };
 type Sum = { customerId: string; customerName: string; billed: number; received: number; outstanding: number };
 type Data = { customers: Row[]; invoices: Row[]; entries: Ent[]; summary: Sum[]; totals: { billed: number; received: number; outstanding: number } };
-const blank = { description: '', hsnSac: '', qty: 1, rate: 0, taxPercent: 18 };
+const blank = { description: '', hsnSac: '', qty: 1, rate: 0, discount: 0, taxPercent: 18 };
 const today = () => new Date().toISOString().slice(0, 10);
 const inr = (n: number | string) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const send = (m: string, u: string, b?: unknown) => fetch(u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined });
 const STATUSES = ['Issued', 'Partially Paid', 'Paid', 'Cancelled'];
-const KPI = ({ l, v, c }: { l: string; v: string; c?: string }) => <Card sx={{ borderTop: 4, borderColor: c || 'primary.main' }}><CardContent><Typography variant="body2" color="text.secondary">{l}</Typography><Typography variant="h5" fontWeight={800}>{v}</Typography></CardContent></Card>;
+const KPI = ({ l, v, g }: { l: string; v: string; g: string }) => <Card sx={{ color: '#fff', background: g, position: 'relative', overflow: 'hidden', transition: 'transform .2s', '&:hover': { transform: 'translateY(-2px)' } }}>
+  <Box sx={{ position: 'absolute', right: -24, top: -24, width: 100, height: 100, borderRadius: '50%', bgcolor: 'rgba(255,255,255,.14)' }} />
+  <CardContent><Typography variant="body2" sx={{ opacity: 0.85 }}>{l}</Typography><Typography variant="h5" fontWeight={800}>{v}</Typography></CardContent></Card>;
 const paid = (i: Row) => Number(i.amountPaid) > 0 || ['Paid', 'Partially Paid'].includes(i.status);
 
 export default function Invoices() {
   const [d, setD] = useState<Data | null>(null); const [cid, setCid] = useState(''); const [st, setSt] = useState(''); const [q, setQ] = useState(''); const [tab, setTab] = useState(0);
   const [open, setOpen] = useState(false); const [h, setH] = useState({ customerId: '', externalDocNo: '', orderDate: '', date: today(), dueDate: today(), placeOfSupply: '', billingAddress: '' }); const [lines, setLines] = useState([{ ...blank }]);
   const [pay, setPay] = useState<Row | null>(null); const [amt, setAmt] = useState(0); const [mode, setMode] = useState('Bank Transfer'); const [del, setDel] = useState<Row | null>(null);
-  const [msg, setMsg] = useState(''); const [formErr, setFormErr] = useState('');
+  const [msg, setMsg] = useState(''); const [formErr, setFormErr] = useState(''); const [editId, setEditId] = useState('');
 
   // ONE request loads customers + invoices + ledger + totals for the current filter.
   const load = useCallback(async () => {
@@ -32,15 +35,28 @@ export default function Invoices() {
   const ents = useMemo(() => (d?.entries || []).filter(e => !term || `${e.ref} ${e.extRef} ${e.customerName}`.toLowerCase().includes(term)), [d, term]);
 
   const openForm = () => {
+    setEditId(''); setLines([{ ...blank }]);
     const c = d?.customers.find(x => x.id === cid);
     setH({ customerId: cid, externalDocNo: '', orderDate: '', date: today(), dueDate: today(), placeOfSupply: c?.state || '', billingAddress: c?.billingAddress || '' }); setFormErr(''); setOpen(true);
+  };
+  const openEdit = async (i: Row) => {
+    const r = await fetch(`/api/invoices/${i.id}`);
+    if (!r.ok) return setMsg((await r.json().catch(() => ({}))).message || 'Could not load the invoice.');
+    const { invoice: v, items } = await r.json() as { invoice: Row; items: Row[] };
+    setEditId(v.id); setFormErr('');
+    setH({ customerId: v.customerId, externalDocNo: v.externalDocNo || '', orderDate: v.orderDate || '', date: v.date, dueDate: v.dueDate, placeOfSupply: v.placeOfSupply || '', billingAddress: v.billingAddress || '' });
+    setLines(items.map(x => ({ description: x.description, hsnSac: x.hsnSac || '', qty: Number(x.qty), rate: Number(x.rate), discount: Number(x.discount || 0), taxPercent: Number(x.taxPercent) })));
+    setOpen(true);
   };
   const pickCustomer = (id: string) => { const c = d?.customers.find(x => x.id === id); setH({ ...h, customerId: id, placeOfSupply: c?.state || '', billingAddress: c?.billingAddress || '' }); };
   const create = async () => {
     if (!h.customerId) return setFormErr('Select a customer.');
     if (!h.externalDocNo.trim()) return setFormErr('External document no. is required.');
-    const res = await send('POST', '/api/invoices', { ...h, items: lines.map(l => ({ ...l, qty: +l.qty, rate: +l.rate, taxPercent: +l.taxPercent })) });
-    if (res.ok) { setOpen(false); setLines([{ ...blank }]); setMsg('Invoice raised.'); load(); } else setFormErr((await res.json()).message || 'Invoice could not be created.');
+    const { customerId, ...rest } = h;
+    const items = lines.map(l => ({ ...l, qty: +l.qty, rate: +l.rate, discount: +l.discount || 0, taxPercent: +l.taxPercent }));
+    const res = editId ? await send('PUT', `/api/invoices/${editId}`, { ...rest, items }) : await send('POST', '/api/invoices', { ...h, items });
+    if (res.ok) { setOpen(false); setLines([{ ...blank }]); setMsg(editId ? 'Invoice updated.' : 'Invoice raised.'); setEditId(''); await load(); }
+    else { const j = await res.json().catch(() => ({})); setFormErr(j.issues?.[0]?.message || j.message || 'Invoice could not be saved.'); }
   };
   const record = async () => {
     const res = await send('POST', `/api/invoices/${pay!.id}/payments`, { date: today(), amount: +amt, mode });
@@ -61,7 +77,8 @@ export default function Invoices() {
         <Button variant="contained" color="secondary" onClick={openForm}>Raise Invoice</Button>
       </Box>
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(3,1fr)' } }}>
-        <KPI l="Total billed (INR)" v={inr(t?.billed ?? 0)} /><KPI l="Received (INR)" v={inr(t?.received ?? 0)} c="success.main" /><KPI l="Outstanding (INR)" v={inr(t?.outstanding ?? 0)} c="secondary.main" /></Box>
+        {d ? <><KPI l="Total billed (INR)" v={inr(t?.billed ?? 0)} g="linear-gradient(135deg,#1565c0,#0d47a1)" /><KPI l="Received (INR)" v={inr(t?.received ?? 0)} g="linear-gradient(135deg,#2e7d32,#1b5e20)" /><KPI l="Outstanding (INR)" v={inr(t?.outstanding ?? 0)} g="linear-gradient(135deg,#ef6c00,#e65100)" /></>
+          : <><CardSkeleton /><CardSkeleton /><CardSkeleton /></>}</Box>
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ flexGrow: 1 }}><Tab label={`Invoices (${invs.length})`} /><Tab label="Ledger" /></Tabs>
         <TextField size="small" placeholder="Search invoice, ext. doc no, customer" value={q} onChange={e => setQ(e.target.value)} sx={{ minWidth: 280 }} />
@@ -70,15 +87,16 @@ export default function Invoices() {
 
       {tab === 0 && <Paper sx={{ overflowX: 'auto' }}><Table size="small">
         <TableHead><TableRow>{['Invoice', 'Ext. doc no.', 'Order date', 'Customer', 'Date', 'Due', 'Total', 'Paid', 'Balance', 'Status', ''].map(x => <TableCell key={x}>{x}</TableCell>)}</TableRow></TableHead>
-        <TableBody>{invs.map(i => <TableRow key={i.id} hover>
+        <TableBody>{!d && <TableSkeleton rows={6} cols={11} />}{invs.map(i => <TableRow key={i.id} hover>
           <TableCell><Link href={`/admin/invoices/${i.id}`} style={{ color: 'inherit', fontWeight: 600 }}>{i.id}</Link></TableCell>
           <TableCell>{i.externalDocNo || '-'}</TableCell><TableCell>{i.orderDate || '-'}</TableCell><TableCell>{i.customerName}</TableCell><TableCell>{i.date}</TableCell><TableCell>{i.dueDate}</TableCell>
           <TableCell align="right">{inr(i.grandTotal)}</TableCell><TableCell align="right">{inr(i.amountPaid)}</TableCell><TableCell align="right">{inr(i.balanceDue)}</TableCell>
           <TableCell><Chip size="small" label={i.status} color={i.status === 'Paid' ? 'success' : i.status === 'Cancelled' ? 'error' : 'default'} /></TableCell>
           <TableCell sx={{ whiteSpace: 'nowrap' }}>
             {Number(i.balanceDue) > 0 && i.status !== 'Cancelled' && <Button size="small" onClick={() => { setPay(i); setAmt(Number(i.balanceDue)); }}>Record payment</Button>}
+            {!paid(i) && i.status !== 'Cancelled' && <Button size="small" onClick={() => openEdit(i)}>Edit</Button>}
             {!paid(i) && <Button size="small" color="error" onClick={() => setDel(i)}>Delete</Button>}</TableCell></TableRow>)}
-          {!invs.length && <TableRow><TableCell colSpan={11} align="center" sx={{ py: 4, color: 'text.secondary' }}>No invoices found.</TableCell></TableRow>}</TableBody></Table></Paper>}
+          {d && !invs.length && <EmptyRow cols={11} title="No invoices found" hint="Raise an invoice or change the filters." />}</TableBody></Table></Paper>}
 
       {tab === 1 && <>
         {!cid && <Paper sx={{ overflowX: 'auto' }}><Typography sx={{ p: 2 }} fontWeight={600}>Customer-wise summary</Typography><Table size="small">
@@ -89,11 +107,11 @@ export default function Invoices() {
           <TableBody>{ents.map((e, k) => <TableRow key={k}><TableCell>{e.date}</TableCell>{!cid && <TableCell>{e.customerName}</TableCell>}<TableCell>{e.ref}</TableCell><TableCell>{e.extRef}</TableCell><TableCell>{e.type}</TableCell>
             <TableCell align="right">{e.debit ? inr(e.debit) : ''}</TableCell><TableCell align="right">{e.credit ? inr(e.credit) : ''}</TableCell><TableCell align="right">{inr(e.balance)}</TableCell></TableRow>)}</TableBody></Table></Paper></>}
 
-      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="md"><DialogTitle>Raise Invoice</DialogTitle>
+      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="md"><DialogTitle>{editId ? `Edit invoice ${editId}` : 'Raise Invoice'}</DialogTitle>
         <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
           {formErr && <Alert severity="error">{formErr}</Alert>}
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <TextField select label="Customer" value={h.customerId} onChange={e => pickCustomer(e.target.value)} sx={{ minWidth: 260, flex: 1 }}>{d?.customers.map(c => <MenuItem key={c.id} value={c.id}>{c.companyName}</MenuItem>)}</TextField>
+            <TextField select label="Customer" disabled={!!editId} value={h.customerId} onChange={e => pickCustomer(e.target.value)} sx={{ minWidth: 260, flex: 1 }}>{d?.customers.map(c => <MenuItem key={c.id} value={c.id}>{c.companyName}</MenuItem>)}</TextField>
             <TextField required label="External document no." helperText="Customer PO / reference number" value={h.externalDocNo} onChange={e => setH({ ...h, externalDocNo: e.target.value })} sx={{ minWidth: 220 }} />
             <TextField type="date" label="Order date" helperText="Date of the external document" InputLabelProps={{ shrink: true }} value={h.orderDate} onChange={e => setH({ ...h, orderDate: e.target.value })} sx={{ minWidth: 180 }} /></Box>
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -106,10 +124,12 @@ export default function Invoices() {
             <TextField size="small" label="SAC/HSN" value={l.hsnSac} onChange={e => setLine(i, 'hsnSac', e.target.value)} sx={{ width: 100 }} />
             <TextField size="small" label="Qty" value={l.qty} onChange={e => setLine(i, 'qty', e.target.value)} sx={{ width: 70 }} />
             <TextField size="small" label="Rate" value={l.rate} onChange={e => setLine(i, 'rate', e.target.value)} sx={{ width: 110 }} />
-            <TextField size="small" label="GST %" value={l.taxPercent} onChange={e => setLine(i, 'taxPercent', e.target.value)} sx={{ width: 80 }} /></Box>)}
+            <TextField size="small" label="Discount" value={l.discount} onChange={e => setLine(i, 'discount', e.target.value)} sx={{ width: 90 }} />
+            <TextField size="small" label="GST %" value={l.taxPercent} onChange={e => setLine(i, 'taxPercent', e.target.value)} sx={{ width: 80 }} />
+            {lines.length > 1 && <Button size="small" color="error" onClick={() => setLines(lines.filter((_, j) => j !== i))}>Remove</Button>}</Box>)}
           <Button onClick={() => setLines([...lines, { ...blank }])}>Add line</Button>
         </DialogContent>
-        <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="contained" onClick={create}>Create</Button></DialogActions></Dialog>
+        <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="contained" onClick={create}>{editId ? 'Save changes' : 'Create'}</Button></DialogActions></Dialog>
 
       <Dialog open={!!pay} onClose={() => setPay(null)}><DialogTitle>Record payment {pay?.id}</DialogTitle>
         <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>

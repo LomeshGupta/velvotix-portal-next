@@ -1,5 +1,6 @@
 import { google, sheets_v4 } from 'googleapis';
 import { SCHEMA, ID_PREFIX, Row } from './schema';
+import { kv, singleflight } from './cache';
 
 export interface Store {
   init(): Promise<{ spreadsheetId: string; url: string }>;
@@ -30,6 +31,10 @@ function buildRows(sheet: string, existing: Row[], rows: Partial<Row>[]): Row[] 
   for (const r of rows) { const row = withNumber(sheet, full(sheet, { ...r, id: r.id || nextId(sheet, all) })); all.push(row); out.push(row); }
   return out;
 }
+
+/** Sheets whose ids are never shown to people get a unique time-based id, so inserting needs NO read of the sheet (1 API call instead of 2). */
+const SEQ_FREE = new Set(['AuditLog', 'TicketActivities', 'TicketMessages', 'InvoiceItems', 'Notifications']);
+const uid = (sheet: string) => `${ID_PREFIX[sheet] ?? sheet.toUpperCase().slice(0, 4)}-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
 export class DemoStore implements Store {
   private d: Record<string, Row[]> = Object.fromEntries(Object.keys(SCHEMA).map(k => [k, []]));
@@ -68,8 +73,9 @@ const col = (n: number) => { let s = ''; for (n++; n > 0; n = Math.floor((n - 1)
 export class SheetsStore implements Store {
   private api: sheets_v4.Sheets;
   private id = process.env.GOOGLE_SPREADSHEET_ID || '';
-  private cache = new Map<string, { at: number; rows: Row[] }>();
-  private ttl = 15_000;
+  /** Bumped on every local write so a read that started before the write never re-caches stale rows. */
+  private epoch: Record<string, number> = {};
+  private ttl = Number(process.env.CACHE_TTL_SECONDS) || (process.env.REDIS_URL ? 60 : 15);
   constructor() {
     const auth = new google.auth.JWT({
       email: process.env.GOOGLE_CLIENT_EMAIL,
@@ -110,26 +116,38 @@ export class SheetsStore implements Store {
     return { spreadsheetId: this.id, url: this.url() };
   }
 
-  async list(s: string) {
-    const c = this.cache.get(s);
-    if (c && Date.now() - c.at < this.ttl) return [...c.rows];
+  private key(s: string) { return `${this.id}:sheet:${s}`; }
+  private async invalidate(s: string) { this.epoch[s] = (this.epoch[s] || 0) + 1; await kv.del(this.key(s)); }
+  private async readSheet(s: string): Promise<Row[]> {
     const r = await retry(() => this.api.spreadsheets.values.get({
       spreadsheetId: this.id, range: `${s}!A2:${col(SCHEMA[s].length - 1)}` }));
-    const rows = (r.data.values ?? []).map(v => Object.fromEntries(SCHEMA[s].map((h, i) => [h, String(v[i] ?? '')])) as Row)
-      .filter(r => r.id);
-    this.cache.set(s, { at: Date.now(), rows });
+    return (r.data.values ?? []).map(v => Object.fromEntries(SCHEMA[s].map((h, i) => [h, String(v[i] ?? '')])) as Row).filter(r => r.id);
+  }
+  /** Redis (or memory) first; one shared Google API read on a miss. Any write through this store invalidates the entry. */
+  async list(s: string) {
+    const key = this.key(s);
+    const hit = await kv.getJSON<Row[]>(key);
+    if (hit) return hit;
+    const rows = await singleflight(key, async () => {
+      const e = this.epoch[s] || 0;
+      const fresh = await this.readSheet(s);
+      if ((this.epoch[s] || 0) === e) await kv.setJSON(key, fresh, this.ttl);
+      return fresh;
+    });
     return [...rows];
   }
   async get(s: string, id: string) { return (await this.list(s)).find(r => r.id === id); }
   async insert(s: string, row: Partial<Row>) { return (await this.insertMany(s, [row]))[0]; }
   async insertMany(s: string, rows: Partial<Row>[]) {
     if (!rows.length) return [];
-    this.cache.delete(s); // fresh read so ID generation is accurate
-    const out = buildRows(s, await this.list(s), rows);
+    // Numbered sheets need a fresh read so ids are accurate; id-free sheets skip the read entirely.
+    const out = SEQ_FREE.has(s)
+      ? buildRows(s, [], rows.map(r => ({ ...r, id: r.id || uid(s) })))
+      : buildRows(s, await this.readSheet(s), rows);
     await retry(() => this.api.spreadsheets.values.append({
       spreadsheetId: this.id, range: `${s}!A1`, valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS',
       requestBody: { values: out.map(r => SCHEMA[s].map(h => r[h])) } }));
-    this.cache.delete(s); return out;
+    await this.invalidate(s); return out;
   }
   async update(s: string, id: string, patch: Partial<Row>) {
     // One read of the whole sheet body gives both the row position and the current values (2 API calls per update, not 3).
@@ -140,7 +158,7 @@ export class SheetsStore implements Store {
     const r = full(s, { ...cur, ...patch, id });
     await retry(() => this.api.spreadsheets.values.update({
       spreadsheetId: this.id, range: `${s}!A${idx + 2}`, valueInputOption: 'RAW', requestBody: { values: [SCHEMA[s].map(h => r[h])] } }));
-    this.cache.delete(s); return r;
+    await this.invalidate(s); return r;
   }
   async remove(s: string, id: string) { return this.removeMany({ [s]: [id] }); }
   async removeMany(targets: Record<string, string[]>) {
@@ -159,7 +177,7 @@ export class SheetsStore implements Store {
         .map(i => ({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: i + 1, endIndex: i + 2 } } }));
     });
     if (requests.length) await retry(() => this.api.spreadsheets.batchUpdate({ spreadsheetId: this.id, requestBody: { requests } }));
-    names.forEach(n => this.cache.delete(n));
+    await Promise.all(names.map(n => this.invalidate(n)));
   }
 }
 export const createStore = (): Store => {

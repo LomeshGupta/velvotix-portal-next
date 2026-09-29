@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { handler, audit, STAFF } from '@/lib/api';
 import { calcInvoice } from '@/lib/gst';
+import { notify, FINANCE } from '@/lib/notify';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const body = z.object({
@@ -30,7 +31,8 @@ export const POST = handler(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTS'], async c => {
   // number is filled by the store on insert; all line items go in with a single append call
   await c.db.insertMany('InvoiceItems', t.lines.map(l => ({ invoiceId: inv.id, description: l.description, hsnSac: l.hsnSac, qty: String(l.qty), rate: String(l.rate),
     discount: String(l.discount), taxPercent: String(l.taxPercent), taxable: String(l.taxable), cgst: String(l.cgst), sgst: String(l.sgst), igst: String(l.igst), lineTotal: String(l.lineTotal) })));
-  await c.db.insert('Notifications', { userId: '', type: 'INVOICE_CREATED', title: `Invoice ${inv.id} created`, body: cust.companyName, read: 'false', createdAt: new Date().toISOString() });
+  await notify(c.db, { roles: FINANCE }, { type: 'INVOICE', title: `Invoice ${inv.id} raised`, body: `${cust.companyName}, INR ${t.grandTotal.toLocaleString('en-IN')}`, link: '/admin/invoices' }, { except: c.auth.uid });
+  await notify(c.db, { customerId: b.customerId }, { type: 'INVOICE', title: `New invoice ${b.externalDocNo}`, body: `INR ${t.grandTotal.toLocaleString('en-IN')}, due ${b.dueDate}` });
   await audit(c, 'CREATE', 'Invoices', inv.id);
   return Response.json({ ...inv, intraState: intra }, { status: 201 });
 });

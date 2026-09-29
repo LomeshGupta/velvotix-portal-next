@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { handler, audit, STAFF, STAFF_WRITE } from "@/lib/api";
+import { notify } from "@/lib/notify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -269,6 +270,7 @@ export const POST = handler(STAFF_WRITE, async (c) => {
     createdBy: c.auth.uid,
   });
 
+  await notify(c.db, { customerId: b.customerId }, { type: "CONTRACT", title: `New support contract ${contract.contractNumber}`, body: `${b.type}, ${b.supportHours} hours, valid till ${b.endDate}`, link: "/portal/tickets" }, { except: c.auth.uid });
   await audit(c, "CREATE", "SupportContracts", contract.id);
 
   return Response.json(contract, {

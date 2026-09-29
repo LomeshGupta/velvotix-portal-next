@@ -2,6 +2,7 @@
 import { useMemo, useState, createContext, useContext } from 'react';
 import { CssBaseline, GlobalStyles, ThemeProvider, createTheme } from '@mui/material';
 import PwaRegister from '@/components/PwaRegister';
+import { GlobalProgress } from '@/components/ui';
 const Mode = createContext<() => void>(() => {});
 export const useToggleMode = () => useContext(Mode);
 export default function Providers({ children }: { children: React.ReactNode }) {
@@ -28,5 +29,5 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       '@media (pointer: coarse)': { '.MuiButton-root, .MuiIconButton-root, .MuiTab-root': { minHeight: 44 }, '.MuiIconButton-root': { minWidth: 44 } },
       '@media (max-width:600px)': { '.MuiDialog-paper': { margin: '8px !important', width: 'calc(100% - 16px) !important', maxWidth: 'none !important', maxHeight: 'calc(100% - 16px) !important' } },
     }} />
-    <PwaRegister />{children}</ThemeProvider></Mode.Provider>;
+    <PwaRegister /><GlobalProgress />{children}</ThemeProvider></Mode.Provider>;
 }
