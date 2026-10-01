@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { handler, audit } from '@/lib/api';
 import { notify, FINANCE } from '@/lib/notify';
+import { INVOICE_WRITE } from '@/lib/roles';
 export const runtime = 'nodejs';
 const body = z.object({ date: z.string(), amount: z.number().positive(), mode: z.enum(['Bank Transfer', 'UPI', 'Cash', 'Cheque', 'Card', 'Other']), reference: z.string().optional(), notes: z.string().optional() });
-export const POST = handler(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTS'], async c => {
+export const POST = handler(INVOICE_WRITE, async c => {
   const b = body.parse(await c.req.json());
   const inv = await c.db.get('Invoices', c.params.id);
   if (!inv) return Response.json({ message: 'Invoice not found.' }, { status: 404 });

@@ -24,7 +24,8 @@ export default function HoursPanel({ ticket }: { ticket: Row }) {
       <Typography fontWeight={700}>Support hours</Typography>
       {sm && <Box><Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="h5" fontWeight={800} color={sm.remaining < 5 ? 'error' : 'primary'}>{sm.remaining} h left</Typography>
         <Chip size="small" color={sm.expired ? 'error' : 'default'} label={sm.expired ? 'Expired' : sm.validTill ? `Valid till ${sm.validTill}` : 'No hours'} /></Box>
-        <LinearProgress variant="determinate" value={pct} sx={{ height: 8, borderRadius: 4, mt: 1 }} /></Box>}
+        <LinearProgress variant="determinate" value={pct} sx={{ height: 8, borderRadius: 4, mt: 1 }} />
+        <Typography variant="caption" color="text.secondary">{sm.used} of {sm.added} h used</Typography></Box>}
       {err && <Alert severity="error" onClose={() => setErr('')}>{err}</Alert>}
       {reqs.map(r => <Box key={r.id} sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography fontWeight={700}>{r.hours} h</Typography>

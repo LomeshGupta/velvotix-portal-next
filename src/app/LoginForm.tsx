@@ -17,6 +17,7 @@ import {
 import Brightness4 from "@mui/icons-material/Brightness4";
 import { useToggleMode } from "./providers";
 import { InstallButton } from "@/components/PwaRegister";
+import { homeFor } from "@/lib/roles";
 
 export default function LoginForm({
   portal,
@@ -41,9 +42,7 @@ export default function LoginForm({
 
         const u = await res.json();
 
-        r.replace(
-          u.role === "CUSTOMER" ? "/portal/tickets" : "/admin/dashboard",
-        );
+        r.replace(homeFor(u.role));
       })
       .catch(() => {
         // No active session.
@@ -74,7 +73,9 @@ export default function LoginForm({
       });
 
       if (res.ok) {
-        r.push(portal === "admin" ? "/admin/dashboard" : "/portal/tickets");
+        const me = await res.json().catch(() => ({}));
+
+        r.push(homeFor(me?.role ?? (portal === "admin" ? "ADMIN" : "CUSTOMER")));
 
         // Keep busy state while navigating.
         return;

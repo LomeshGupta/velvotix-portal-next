@@ -1,4 +1,5 @@
-import { handler, STAFF } from '@/lib/api';
+import { handler } from '@/lib/api';
+import { FINANCE_VIEW } from '@/lib/roles';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -8,7 +9,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  *   GET /api/ledger?customerId=CUST-1  -> one customer
  * Returns customers, invoices (with customer name), ledger entries (running balance per customer) and per-customer totals.
  */
-export const GET = handler(STAFF, async ({ db, req }) => {
+export const GET = handler(FINANCE_VIEW, async ({ db, req }) => {
   const cid = new URL(req.url).searchParams.get('customerId') || '';
   const [cu, inv, pay] = await Promise.all([db.list('Customers'), db.list('Invoices'), db.list('Payments')]);
   const name = new Map(cu.map(c => [c.id, c.companyName]));

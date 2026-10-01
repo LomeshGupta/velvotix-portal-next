@@ -2,9 +2,10 @@ import { z } from 'zod';
 import { handler, audit } from '@/lib/api';
 import { hoursSummary } from '@/lib/hours';
 import { notify } from '@/lib/notify';
+import { SUPPORT_VIEW } from '@/lib/roles';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const GET = handler([], async ({ db, auth, params }) => {
+export const GET = handler([...SUPPORT_VIEW, 'CUSTOMER'], async ({ db, auth, params }) => {
   if (auth.role === 'CUSTOMER' && auth.customerId !== params.id) return Response.json({ message: 'Not permitted.' }, { status: 403 });
   const ledger = (await db.list('HoursLedger')).filter(l => l.customerId === params.id);
   return { summary: hoursSummary(ledger), ledger: ledger.reverse() };

@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { handler, audit, STAFF } from '@/lib/api';
+import { handler, audit } from '@/lib/api';
 import { calcInvoice } from '@/lib/gst';
 import { notify, FINANCE } from '@/lib/notify';
+import { FINANCE_VIEW, INVOICE_WRITE } from '@/lib/roles';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const GET = handler(STAFF, async ({ db, auth, params }) => {
+export const GET = handler(FINANCE_VIEW, async ({ db, auth, params }) => {
   const inv = await db.get('Invoices', params.id);
   if (!inv || (auth.role === 'CUSTOMER' && inv.customerId !== auth.customerId)) return Response.json({ message: 'Invoice not found.' }, { status: 404 });
   const [items, payments, company, customer] = await Promise.all([db.list('InvoiceItems'), db.list('Payments'), db.get('Company', 'COMPANY'), db.get('Customers', inv.customerId)]);
@@ -12,7 +13,7 @@ export const GET = handler(STAFF, async ({ db, auth, params }) => {
 });
 
 /** Delete an invoice (and its line items) only while nothing has been paid against it. Rows are removed in one batch. */
-export const DELETE = handler(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTS'], async c => {
+export const DELETE = handler(INVOICE_WRITE, async c => {
   const inv = await c.db.get('Invoices', c.params.id);
   if (!inv) return Response.json({ message: 'Invoice not found.' }, { status: 404 });
   const payments = (await c.db.list('Payments')).filter(p => p.invoiceId === inv.id);
@@ -34,7 +35,7 @@ const edit = z.object({
  * Edit an invoice while NOTHING has been paid against it. Totals and GST split are recalculated on the server.
  * Line items are replaced: new rows are added first, then the old ones removed (a failure part-way never loses data).
  */
-export const PUT = handler(['SUPER_ADMIN', 'ADMIN', 'ACCOUNTS'], async c => {
+export const PUT = handler(INVOICE_WRITE, async c => {
   const b = edit.parse(await c.req.json());
   const inv = await c.db.get('Invoices', c.params.id);
   if (!inv) return Response.json({ message: 'Invoice not found.' }, { status: 404 });

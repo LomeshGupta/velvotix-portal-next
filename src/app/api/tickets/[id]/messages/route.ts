@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { handler } from '@/lib/api';
 import { notify, STAFF_LEADS } from '@/lib/notify';
+import { SUPPORT_VIEW } from '@/lib/roles';
 export const runtime = 'nodejs';
 const body = z.object({ message: z.string().min(1).max(5000), isInternal: z.boolean().optional() });
-export const POST = handler([], async c => {
+export const POST = handler([...SUPPORT_VIEW, 'CUSTOMER'], async c => {
   const b = body.parse(await c.req.json());
   const t = await c.db.get('Tickets', c.params.id);
   const cust = c.auth.role === 'CUSTOMER';

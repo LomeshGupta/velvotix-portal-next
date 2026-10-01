@@ -1,8 +1,9 @@
-import { handler, STAFF } from '@/lib/api';
+import { handler } from '@/lib/api';
+import { FINANCE_VIEW } from '@/lib/roles';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const r2 = (n: number) => Math.round(n * 100) / 100;
-export const GET = handler(STAFF, async ({ db, params }) => {
+export const GET = handler(FINANCE_VIEW, async ({ db, params }) => {
   const [inv, pay, customer] = await Promise.all([db.list('Invoices'), db.list('Payments'), db.get('Customers', params.id)]);
   if (!customer) return Response.json({ message: 'Customer not found.' }, { status: 404 });
   const e = [

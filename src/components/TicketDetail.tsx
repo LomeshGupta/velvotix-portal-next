@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import HoursPanel from './HoursPanel';
+import ContractInfo from './ContractInfo';
 import { Alert, Box, Card, CardContent, Chip, FormControlLabel, MenuItem, Switch, TextField, Typography } from '@mui/material';
 import { Button } from '@/components/ui';
 type Row = Record<string, string>;
@@ -42,6 +43,7 @@ export default function TicketDetail({ id, staff }: { id: string; staff: boolean
             </> : <><Chip label={t.status} color="primary" /><Typography variant="body2">Priority: {t.priority}</Typography></>}
             <Typography variant="body2" color="text.secondary">{t.category} - created {t.createdAt.slice(0, 10)}</Typography>
           </CardContent></Card>
+          {staff && <ContractInfo customerId={t.customerId} />}
           <HoursPanel ticket={t} />
           <Card><CardContent><Typography fontWeight={600} mb={1}>Activity</Typography>
             {d.activities.map(a => <Box key={a.id} sx={{ borderLeft: 2, borderColor: 'primary.main', pl: 1.5, pb: 1.5 }}><Typography variant="body2" fontWeight={600}>{a.type}</Typography>

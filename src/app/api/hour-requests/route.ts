@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { handler, audit, STAFF } from '@/lib/api';
+import { handler, audit } from '@/lib/api';
 import { hoursSummary } from '@/lib/hours';
 import { notify } from '@/lib/notify';
+import { SUPPORT_VIEW } from '@/lib/roles';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const GET = handler([], async ({ db, auth, req }) => {
+export const GET = handler([...SUPPORT_VIEW, 'CUSTOMER'], async ({ db, auth, req }) => {
   const sp = new URL(req.url).searchParams;
   let rows = await db.list('HourRequests');
   if (auth.role === 'CUSTOMER') rows = rows.filter(r => r.customerId === auth.customerId);
@@ -22,7 +23,7 @@ export const GET = handler([], async ({ db, auth, req }) => {
 });
 const body = z.object({ ticketId: z.string(), hours: z.number().positive().max(500), reason: z.string().min(3) });
 /** Only the assigned user (or an admin) may raise a request for a ticket. */
-export const POST = handler(STAFF, async c => {
+export const POST = handler(SUPPORT_VIEW, async c => {
   const b = body.parse(await c.req.json());
   const t = await c.db.get('Tickets', b.ticketId);
   if (!t) return Response.json({ message: 'Ticket not found.' }, { status: 404 });

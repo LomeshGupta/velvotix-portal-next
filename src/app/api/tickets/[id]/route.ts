@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { handler, audit } from '@/lib/api';
 import { notify } from '@/lib/notify';
+import { SUPPORT_VIEW } from '@/lib/roles';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const GET = handler([], async ({ db, auth, params }) => {
+export const GET = handler([...SUPPORT_VIEW, 'CUSTOMER'], async ({ db, auth, params }) => {
   const t = await db.get('Tickets', params.id);
   if (!t || (auth.role === 'CUSTOMER' && t.customerId !== auth.customerId)) return Response.json({ message: 'Ticket not found.' }, { status: 404 });
   const [msgs, acts] = await Promise.all([db.list('TicketMessages'), db.list('TicketActivities')]);

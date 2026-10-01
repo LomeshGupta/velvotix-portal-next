@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Box, Button, Typography } from "@mui/material";
 import { rupeesInWords } from "@/lib/words";
@@ -176,6 +177,8 @@ function TotalRow({
 ============================================================ */
 
 export default function InvoicePrint({ params }: InvoicePrintProps) {
+  const searchParams = useSearchParams();
+  const autoPrint = searchParams.get("print") === "1";
   const [data, setData] = useState<InvoiceData | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -227,6 +230,14 @@ export default function InvoicePrint({ params }: InvoicePrintProps) {
       mounted = false;
     };
   }, [params.id]);
+
+  // "Download PDF" quick-links pass ?print=1 so the browser's print/save-as-PDF dialog opens automatically once data is ready.
+  useEffect(() => {
+    if (autoPrint && !loading && data && !error) {
+      const t = setTimeout(() => window.print(), 300);
+      return () => clearTimeout(t);
+    }
+  }, [autoPrint, loading, data, error]);
 
   /* ============================================================
      LOADING

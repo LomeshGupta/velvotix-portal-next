@@ -100,7 +100,24 @@ export default function NotificationBell({ color }: { color?: 'inherit' }) {
   const open = async (n: N) => { setAnchor(null); if (!n.read) post({ action: 'read', ids: [n.id] }); if (n.link) router.push(n.link); };
   const canPush = serverPush.enabled && push !== 'unsupported';
 
+  // Proactive, always-visible nudge (not just inside the dropdown): shown once per browser session until the user enables push or dismisses it, so it is not missed.
+  const [nudgeDismissed, setNudgeDismissed] = useState(false);
+  useEffect(() => { if (sessionStorage.getItem('pushNudgeDismissed')) setNudgeDismissed(true); }, []);
+  const dismissNudge = () => { sessionStorage.setItem('pushNudgeDismissed', '1'); setNudgeDismissed(true); };
+  const showNudge = canPush && !nudgeDismissed && (push === 'off' || push === 'denied');
+
   return (<>
+    {showNudge && (
+      <Box sx={{ position: 'fixed', top: { xs: 'env(safe-area-inset-top, 0px)', sm: 8 }, left: 0, right: 0, zIndex: 1301, display: 'flex', justifyContent: 'center', px: 1, pointerEvents: 'none' }}>
+        <Alert severity={push === 'denied' ? 'warning' : 'info'} icon={<NotificationsActive fontSize="small" />} onClose={dismissNudge}
+          sx={{ mt: 1, maxWidth: 480, width: '100%', boxShadow: 4, pointerEvents: 'auto' }}
+          action={push === 'off' ? <Button size="small" onClick={async () => { await enablePush(); dismissNudge(); }}>Turn on</Button> : undefined}>
+          {push === 'denied'
+            ? 'Notifications are blocked for this site. Turn them back on from your browser\'s site settings to get ticket and invoice alerts.'
+            : 'Turn on notifications so you never miss a ticket reply, invoice, or approval request.'}
+        </Alert>
+      </Box>
+    )}
     <Tooltip title="Notifications">
       <IconButton color={color} onClick={e => setAnchor(e.currentTarget)} aria-label={`notifications, ${unread} unread`}>
         <Badge badgeContent={unread} color="error" max={99} sx={unread ? { '& .MuiBadge-badge': { animation: 'vxpop .4s ease' }, '@keyframes vxpop': { '0%': { transform: 'scale(.4) translate(50%,-50%)' }, '70%': { transform: 'scale(1.25) translate(50%,-50%)' } } } : undefined}>

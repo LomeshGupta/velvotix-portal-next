@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { handler, audit, STAFF, STAFF_WRITE } from "@/lib/api";
+import { handler, audit, STAFF_WRITE } from "@/lib/api";
+import { SUPPORT_VIEW } from "@/lib/roles";
+import type { Row } from "@/lib/schema";
+import { industryOk, productNames, productsCsv } from "@/lib/contractMeta";
 import { notify } from "@/lib/notify";
 
 export const runtime = "nodejs";
@@ -33,6 +36,10 @@ const body = z.object({
   prioritySupport: z.boolean().optional(),
 
   notes: z.string().trim().optional(),
+
+  industry: z.string().trim().optional().refine(industryOk, "Unknown industry"),
+
+  products: z.array(z.string()).optional(),
 });
 
 /**
@@ -70,7 +77,7 @@ const getContractStatus = (
  * CUSTOMER:
  *   Returns only contracts belonging to the logged-in customer.
  */
-export const GET = handler([...STAFF, "CUSTOMER"], async ({ db, auth }) => {
+export const GET = handler([...SUPPORT_VIEW, "CUSTOMER"], async ({ db, auth, req }) => {
   const settings = await db.list("Settings");
 
   const configuredWarningDays = settings.find(
@@ -98,11 +105,24 @@ export const GET = handler([...STAFF, "CUSTOMER"], async ({ db, auth }) => {
     rows = rows.filter((row) => row.customerId === auth.customerId);
   }
 
+  /** Optional filter used by the ticket / customer screens (additive, existing callers are unaffected). */
+  const onlyCustomer = new URL(req.url).searchParams.get("customerId");
+  if (onlyCustomer && auth.role !== "CUSTOMER") {
+    rows = rows.filter((row) => row.customerId === onlyCustomer);
+  }
+
+  const master = await db.list("Products");
+
+  /** Milestone invoicing: sum the % and amount already invoiced against each contract (invoices that set milestonePercent; manual phase-completion invoices don't set it and are not counted). */
+  const invoices = await db.list("Invoices");
+  const invoicedFor = (contractId: string) => invoices.filter(i => i.contractId === contractId && i.status !== "Cancelled" && Number(i.milestonePercent || 0) > 0)
+    .reduce((a, i) => ({ pct: a.pct + Number(i.milestonePercent || 0), amt: a.amt + Number(i.grandTotal || 0) }), { pct: 0, amt: 0 });
+
   /**
    * Don't dynamically overwrite Draft/Cancelled.
    * All other contracts get a calculated status.
    */
-  const result = rows.map((row) => {
+  const result: Row[] = rows.map((row): Row => {
     if (row.status === "Draft" || row.status === "Cancelled") {
       return row;
     }
@@ -111,6 +131,12 @@ export const GET = handler([...STAFF, "CUSTOMER"], async ({ db, auth }) => {
       ...row,
       status: getContractStatus(row.endDate, safeWarningDays),
     };
+  }).map((row) => {
+    const inv = invoicedFor(row.id);
+    const remainingPercent = Math.max(0, Math.round((100 - inv.pct) * 100) / 100);
+    return { ...row, industry: row.industry || "", products: row.products || "", productNames: productNames(master, row.products),
+      invoicedPercent: String(Math.min(100, inv.pct)), invoicedAmount: String(inv.amt), remainingPercent: String(remainingPercent),
+      remainingAmount: String(Math.max(0, Math.round((Number(row.total || 0) * remainingPercent) / 100 * 100) / 100)) };
   });
 
   /**
@@ -154,6 +180,15 @@ export const POST = handler(STAFF_WRITE, async (c) => {
   }
 
   const b = parsed.data;
+
+  const productIds = await productsCsv(c.db, b.products);
+
+  if (productIds === null) {
+    return Response.json(
+      { message: "One or more selected products / services do not exist." },
+      { status: 400 },
+    );
+  }
 
   /**
    * Prevent invalid date ranges.
@@ -268,6 +303,10 @@ export const POST = handler(STAFF_WRITE, async (c) => {
     createdAt: new Date().toISOString(),
 
     createdBy: c.auth.uid,
+
+    industry: b.industry || "",
+
+    products: productIds,
   });
 
   await notify(c.db, { customerId: b.customerId }, { type: "CONTRACT", title: `New support contract ${contract.contractNumber}`, body: `${b.type}, ${b.supportHours} hours, valid till ${b.endDate}`, link: "/portal/tickets" }, { except: c.auth.uid });

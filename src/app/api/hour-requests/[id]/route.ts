@@ -2,10 +2,11 @@ import { z } from 'zod';
 import { handler, audit } from '@/lib/api';
 import { hoursSummary } from '@/lib/hours';
 import { notify } from '@/lib/notify';
+import { SUPPORT_VIEW } from '@/lib/roles';
 export const runtime = 'nodejs';
 const body = z.object({ decision: z.enum(['Approved', 'Rejected']) });
 /** Approval by an admin OR the customer who owns the ticket. Approval deducts from the balance. */
-export const PUT = handler([], async c => {
+export const PUT = handler([...SUPPORT_VIEW, 'CUSTOMER'], async c => {
   const { decision } = body.parse(await c.req.json());
   const r = await c.db.get('HourRequests', c.params.id);
   if (!r) return Response.json({ message: 'Request not found.' }, { status: 404 });
