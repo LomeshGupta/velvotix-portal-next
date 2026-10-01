@@ -1,16 +1,15 @@
 import webpush from 'web-push';
-import { createHash } from 'crypto';
-import Redis from 'ioredis';
+import { createStore } from './store';
 
 /**
- * Web Push (works when the app is closed; installed PWA on Android/desktop, and iOS 16.4+ once added to the Home Screen).
- * Needs VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (generate with `npx web-push generate-vapid-keys`). Without them push is simply off
- * and the in-app bell keeps working.
+ * Production Web Push backed by the application's existing Google Sheets store.
+ * No Redis is required. Subscriptions are persisted in PushSubscriptions.
  */
 let ready: boolean | null = null;
 export function pushEnabled(): boolean {
   if (ready !== null) return ready;
-  const pub = process.env.VAPID_PUBLIC_KEY, pri = process.env.VAPID_PRIVATE_KEY;
+  const pub = process.env.VAPID_PUBLIC_KEY;
+  const pri = process.env.VAPID_PRIVATE_KEY;
   if (!pub || !pri) return (ready = false);
   webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@example.com', pub, pri);
   return (ready = true);
@@ -19,90 +18,74 @@ export const vapidPublicKey = () => process.env.VAPID_PUBLIC_KEY || '';
 
 export type PushSub = { endpoint: string; keys: { p256dh: string; auth: string } };
 export type PushPayload = { title: string; body: string; url: string; tag?: string };
-const TTL = 60 * 60 * 24 * 90, MAX_DEVICES = 5;
-const hkey = (uid: string) => `ps:${uid}`;
-const owner = (endpoint: string) => `pe:${createHash('sha1').update(endpoint).digest('hex')}`;
 
-/**
- * Push subscriptions MUST use shared persistent Redis on production.
- * Do not fall back to Vercel function memory: each serverless invocation/instance
- * may have a different memory store, which would make registered devices randomly disappear.
- */
-let pushRedis: Redis | null = null;
-let pushRedisInit = false;
-function getPushRedis(): Redis {
-  if (pushRedisInit && pushRedis) return pushRedis;
-  pushRedisInit = true;
-  const url = process.env.REDIS_URL;
-  if (!url) throw new Error('REDIS_URL is required for push notifications in production.');
-  pushRedis = new Redis(url, {
-    maxRetriesPerRequest: 2,
-    connectTimeout: 3000,
-    commandTimeout: 2500,
-    retryStrategy: t => Math.min(t * 250, 3000),
-  });
-  pushRedis.on('error', e => console.error(`[push-redis] ${e.message}`));
-  return pushRedis;
+async function store() {
+  const db = createStore();
+  await db.init();
+  return db;
 }
 
-const prefix = (k: string) => `${process.env.REDIS_PREFIX ?? 'vx:'}${k}`;
-const pk = (k: string) => prefix(k);
-
-async function redisHealth(): Promise<Redis> {
-  const r = getPushRedis();
-  await r.ping();
-  return r;
-}
-
-/** Store a device subscription durably in shared Redis. */
+/** Store/update one device. Endpoint is the stable device key. */
 export async function saveSub(uid: string, sub: PushSub, ua: string) {
-  const r = await redisHealth();
-  const endpointKey = pk(owner(sub.endpoint));
-  const userKey = pk(hkey(uid));
-  const previous = await r.get(endpointKey);
-  if (previous && previous !== uid) await r.hdel(pk(hkey(previous)), sub.endpoint);
+  const db = await store();
+  const all = await db.list('PushSubscriptions');
+  const existing = all.find(r => r.endpoint === sub.endpoint);
+  const now = new Date().toISOString();
+  const patch = {
+    userId: uid,
+    endpoint: sub.endpoint,
+    p256dh: sub.keys.p256dh,
+    auth: sub.keys.auth,
+    userAgent: ua.slice(0, 500),
+    platform: /iphone|ipad|ipod/i.test(ua) ? 'iOS' : /android/i.test(ua) ? 'Android' : 'Web',
+    enabled: 'true',
+    updatedAt: now,
+    createdAt: existing?.createdAt || now,
+  };
+  if (existing) await db.update('PushSubscriptions', existing.id, patch);
+  else await db.insert('PushSubscriptions', patch);
 
-  const value = JSON.stringify({ sub, ua: ua.slice(0, 120), at: Date.now() });
-  await r.multi()
-    .hset(userKey, sub.endpoint, value)
-    .expire(userKey, TTL)
-    .set(endpointKey, uid, 'EX', TTL)
-    .exec();
-
-  const all = await r.hgetall(userKey);
-  const extra = Object.entries(all)
-    .map(([e, v]) => [e, (JSON.parse(v) as { at: number }).at] as const)
-    .sort((a, b) => b[1] - a[1])
-    .slice(MAX_DEVICES)
-    .map(x => x[0]);
-  if (extra.length) await r.hdel(userKey, ...extra);
+  // Keep a practical per-user device limit without deleting another user's device.
+  const current = (await db.list('PushSubscriptions'))
+    .filter(r => r.userId === uid && r.enabled === 'true')
+    .sort((a, b) => Date.parse(b.updatedAt || b.createdAt || '') - Date.parse(a.updatedAt || a.createdAt || ''));
+  if (current.length > 5) {
+    for (const row of current.slice(5)) await db.remove('PushSubscriptions', row.id);
+  }
 }
 
 export async function removeSub(uid: string, endpoint: string) {
-  const r = await redisHealth();
-  await r.hdel(pk(hkey(uid)), endpoint);
-  await r.del(pk(owner(endpoint)));
+  const db = await store();
+  const rows = await db.list('PushSubscriptions');
+  const matches = rows.filter(r => r.userId === uid && r.endpoint === endpoint);
+  for (const row of matches) await db.remove('PushSubscriptions', row.id);
 }
 
-/** Deliver to every device of a user. Expired/invalid subscriptions (404/410) are deleted automatically. */
+/** Deliver to every enabled device of a user. Invalid subscriptions are removed. */
 export async function pushToUser(uid: string, payload: PushPayload): Promise<void> {
   if (!pushEnabled()) return;
-  const r = await redisHealth();
-  const subs = await r.hgetall(pk(hkey(uid)));
-  await Promise.allSettled(Object.entries(subs).map(async ([endpoint, raw]) => {
+  const db = await store();
+  const rows = (await db.list('PushSubscriptions')).filter(r => r.userId === uid && r.enabled === 'true');
+  if (!rows.length) return;
+
+  await Promise.allSettled(rows.map(async row => {
+    const sub: PushSub = {
+      endpoint: row.endpoint,
+      keys: { p256dh: row.p256dh, auth: row.auth },
+    };
     try {
-      await webpush.sendNotification(
-        (JSON.parse(raw) as { sub: PushSub }).sub,
-        JSON.stringify(payload),
-        { TTL: 60 * 60 * 24, urgency: 'normal', timeout: 8000 },
-      );
+      await webpush.sendNotification(sub, JSON.stringify(payload), {
+        TTL: 60 * 60 * 24,
+        urgency: 'normal',
+        timeout: 8000,
+      });
     } catch (e) {
       const code = (e as { statusCode?: number }).statusCode;
       if (code === 404 || code === 410) {
-        await r.hdel(pk(hkey(uid)), endpoint);
-        await r.del(pk(owner(endpoint)));
+        // Browser/provider says this subscription no longer exists.
+        await db.remove('PushSubscriptions', row.id);
       } else {
-        console.warn(`[push] send failed (${code ?? (e as Error).message})`);
+        console.warn(`[push] send failed (${code ?? (e as Error).message}) for ${row.id}`);
       }
     }
   }));

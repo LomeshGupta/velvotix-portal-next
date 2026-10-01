@@ -15,7 +15,7 @@ export const POST = handler([], async ({ auth, req }) => {
     return { ok: true };
   } catch (e) {
     console.error('[push] subscription registration failed', e);
-    return Response.json({ message: 'Push registration storage is unavailable. Check REDIS_URL and Redis connectivity.' }, { status: 503 });
+    return Response.json({ message: 'Push registration storage is unavailable. Check Google Sheets storage and service-account configuration.' }, { status: 503 });
   }
 });
 export const DELETE = handler([], async ({ auth, req }) => {

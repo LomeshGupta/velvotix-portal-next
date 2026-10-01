@@ -1,26 +1,16 @@
-import * as server from 'next/server';
 import { randomUUID } from 'crypto';
-import { kv } from './cache';
 import { pushToUser } from './push';
 import type { Store } from './store';
 
 export type Notif = { id: string; type: string; title: string; body: string; link: string; at: string; read: boolean };
 export type Audience = { users?: (string | undefined)[]; roles?: readonly string[]; customerId?: string };
-const CAP = 50, TTL = 60 * 60 * 24 * 30;
+const CAP = 50;
 export const STAFF_LEADS = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT'] as const;
 export const FINANCE = ['SUPER_ADMIN', 'ADMIN', 'ACCOUNTS'] as const;
 
-/** Run work after the response is sent (Next `after`), falling back to fire-and-forget on older versions. */
-function afterResponse(fn: () => Promise<void>) {
-  const run = () => fn().catch(e => console.error('[after]', e));
-  const a = (server as unknown as { after?: (f: () => Promise<void>) => void }).after;
-  if (a) { try { a(run); return; } catch { /* outside a request scope */ } }
-  void run();
-}
-
 /**
- * Create a notification for everyone in the audience (active users only, never the actor).
- * Stored in Redis per user (last 50, 30 days), plus Web Push to their devices. Never throws: a notification problem must not fail the business action.
+ * Persistent notification history is stored in the existing Google Sheets database.
+ * Web Push is a delivery channel; the sheet remains the source of truth for history/unread state.
  */
 export async function notify(db: Store, aud: Audience, n: { type: string; title: string; body?: string; link?: string }, opts: { except?: string } = {}): Promise<void> {
   try {
@@ -31,31 +21,54 @@ export async function notify(db: Store, aud: Audience, n: { type: string; title:
     }
     if (opts.except) want.delete(opts.except);
     if (!want.size) return;
-    const item = { type: n.type, title: n.title, body: n.body || '', link: n.link || '', at: new Date().toISOString() };
-    await Promise.all([...want].map(async uid => {
-      await kv.lpushCap(`n:${uid}`, JSON.stringify({ ...item, id: randomUUID() }), CAP, TTL);
-      await kv.incr(`nv:${uid}`);
+
+    const now = new Date().toISOString();
+    const rows = [...want].map(uid => ({
+      id: randomUUID(), userId: uid, type: n.type, title: n.title,
+      body: n.body || '', link: n.link || '/', read: 'false', createdAt: now,
     }));
-    // Await the push send attempt. This makes the admin test endpoint and
-    // normal business notifications observable/reliable on serverless hosts
-    // where fire-and-forget work can be terminated with the request. Push
-    // failures are still isolated from the business operation.
-    await Promise.allSettled([...want].map(uid =>
-      pushToUser(uid, { title: item.title, body: item.body, url: item.link || '/', tag: item.link || item.type })
-    ));
-  } catch (e) { console.error('[notify] failed', e); }
+    await db.insertMany('Notifications', rows);
+
+    // Keep the sheet bounded per user. This is intentionally best-effort so notification
+    // delivery can never break the underlying business transaction.
+    try {
+      const all = await db.list('Notifications');
+      for (const uid of want) {
+        const old = all.filter(r => r.userId === uid).sort((a,b) => Date.parse(b.createdAt || '') - Date.parse(a.createdAt || ''));
+        for (const row of old.slice(CAP)) await db.remove('Notifications', row.id);
+      }
+    } catch (e) { console.warn('[notify] history cleanup failed', e); }
+
+    await Promise.allSettled([...want].map(uid => pushToUser(uid, {
+      title: n.title,
+      body: n.body || '',
+      url: n.link || '/',
+      tag: n.link || n.type,
+    })));
+  } catch (e) {
+    console.error('[notify] failed', e);
+  }
 }
 
 export type NotifState = { v: number; changed?: false; unread?: number; items?: Notif[] };
-/** Cheap when nothing changed: with `sinceV` equal to the current version only one Redis read happens and no list is returned. */
-export async function getState(uid: string, sinceV?: number): Promise<NotifState> {
-  const v = Number((await kv.get(`nv:${uid}`)) ?? 0);
+export async function getState(db: Store, uid: string, sinceV?: number): Promise<NotifState> {
+  const rows = (await db.list('Notifications'))
+    .filter(r => r.userId === uid)
+    .sort((a,b) => Date.parse(b.createdAt || '') - Date.parse(a.createdAt || ''))
+    .slice(0, CAP);
+  const v = rows.length ? Date.parse(rows[0].createdAt || '') || 0 : 0;
   if (sinceV !== undefined && sinceV === v) return { v, changed: false };
-  const [raw, readIds, readAll] = await Promise.all([kv.lrange(`n:${uid}`, 0, CAP - 1), kv.smembers(`nr:${uid}`), kv.get(`na:${uid}`)]);
-  const seen = new Set(readIds), upTo = Number(readAll ?? 0);
-  const items: Notif[] = [];
-  for (const r of raw) { try { const x = JSON.parse(r) as Omit<Notif, 'read'>; items.push({ ...x, read: seen.has(x.id) || Date.parse(x.at) <= upTo }); } catch { /* skip corrupt entry */ } }
-  return { v, unread: items.filter(i => !i.read).length, items };
+  return {
+    v,
+    unread: rows.filter(r => r.read !== 'true').length,
+    items: rows.map(r => ({ id:r.id, type:r.type, title:r.title, body:r.body, link:r.link || '/', at:r.createdAt, read:r.read === 'true' })),
+  };
 }
-export async function markRead(uid: string, ids: string[]) { if (ids.length) { await kv.sadd(`nr:${uid}`, TTL, ...ids.slice(0, CAP)); await kv.incr(`nv:${uid}`); } }
-export async function markAllRead(uid: string) { await kv.set(`na:${uid}`, String(Date.now()), TTL); await kv.del(`nr:${uid}`); await kv.incr(`nv:${uid}`); }
+export async function markRead(db: Store, uid: string, ids: string[]) {
+  const rows = await db.list('Notifications');
+  await Promise.all(rows.filter(r => r.userId === uid && ids.includes(r.id)).map(r => db.update('Notifications', r.id, { read:'true' })));
+}
+export async function markAllRead(db: Store, uid: string) {
+  const rows = await db.list('Notifications');
+  await Promise.all(rows.filter(r => r.userId === uid && r.read !== 'true').map(r => db.update('Notifications', r.id, { read:'true' })));
+}
