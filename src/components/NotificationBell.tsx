@@ -75,8 +75,12 @@ export default function NotificationBell({ color }: { color?: 'inherit' }) {
   useEffect(() => { // push status; silently re-registers this device once per session so the server never loses it
     (async () => {
       if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
-      const reg = await navigator.serviceWorker.getRegistration(); if (!reg) return;
-      const r = await fetch('/api/push', { headers: BG }); if (!r.ok) return;
+      // PwaRegister registers /sw.js asynchronously. Waiting for `ready` is
+      // critical: getRegistration() can return null on the first render,
+      // which previously caused push setup to silently stop forever.
+      const reg = await navigator.serviceWorker.ready;
+      if (!reg || !reg.pushManager) return;
+      const r = await fetch('/api/push', { headers: BG, cache: 'no-store' }); if (!r.ok) return;
       const cfg = await r.json(); setServerPush(cfg); if (!cfg.enabled) return;
       if (Notification.permission === 'denied') return setPush('denied');
       if (Notification.permission !== 'granted') return setPush('off');
@@ -94,7 +98,10 @@ export default function NotificationBell({ color }: { color?: 'inherit' }) {
     try {
       const reg = await navigator.serviceWorker.ready;
       if ((await Notification.requestPermission()) !== 'granted') return setPush(Notification.permission === 'denied' ? 'denied' : 'off');
-      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(serverPush.publicKey) });
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(serverPush.publicKey) });
+      }
       const r = await fetch('/api/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub) });
       if (r.ok) { sessionStorage.setItem('pushSynced', '1'); setPush('on'); }
     } catch { setPush('off'); }

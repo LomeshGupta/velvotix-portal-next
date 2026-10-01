@@ -1,26 +1,71 @@
-# Setup for Redis, notifications and push
+# Notification / Web Push production setup
 
-1. Install the new packages:
-   npm i ioredis web-push
-   npm i -D @types/web-push
+## Required server environment
 
-2. Environment variables (.env.local / hosting dashboard):
-   REDIS_URL=redis://localhost:6379   # Upstash / Redis Cloud / self-hosted. Unset = in-memory cache (single instance only)
-   CACHE_TTL_SECONDS=60               # optional; default 60 with Redis, 15 without
-   VAPID_PUBLIC_KEY=...               # generate once: npx web-push generate-vapid-keys
-   VAPID_PRIVATE_KEY=...
-   VAPID_SUBJECT=mailto:you@yourdomain.com
+Set these on the production server/hosting dashboard (not only in `.env.local`):
 
-3. Check it: open /api/health -> {"status":"ok","cache":"redis","push":true}
+```env
+REDIS_URL=your-production-redis-url
+VAPID_PUBLIC_KEY=your-vapid-public-key
+VAPID_PRIVATE_KEY=your-vapid-private-key
+VAPID_SUBJECT=mailto:admin@yourdomain.com
+```
 
-Push needs HTTPS (or localhost) and a production build. On iPhone/iPad, add the app to the Home Screen first.
+Generate one stable VAPID key pair once:
 
-## Production notification / persistent-session verification
+```bash
+npx web-push generate-vapid-keys
+```
 
-- Authentication uses a rolling 30-day session. Active users remain signed in until they explicitly use Logout; inactivity beyond the session window requires sign-in again.
-- Web Push subscriptions are synchronized on every authenticated app startup/login, so closing/reopening the browser or installed PWA does not lose the device registration.
-- Each push endpoint is bound to one authenticated user. Logging out removes the current device endpoint from that user before the auth cookie is cleared.
-- Closed/background delivery requires valid VAPID keys and a browser/PWA that supports Web Push.
-- iPhone/iPad: open the site in Safari, choose **Add to Home Screen**, launch the installed Velvotix app, then enable Notifications and allow the iOS permission prompt. iOS Web Push delivery to Notification Center/Lock Screen depends on the installed Home Screen PWA and OS permission.
-- Notification click routing uses the notification's stored `link`/`url`. The service worker focuses an existing app window and navigates it, or opens a new app window when none exists.
-- Admin test notifications use the normal notification pipeline, so they are persisted in the bell/history and sent to all registered devices for the selected active user.
+Do **not** generate a new pair on every deployment. Keep the same keys permanently; changing them invalidates existing browser subscriptions.
+
+## Verify the server before testing a phone
+
+While logged in, open:
+
+```text
+/api/push
+```
+
+The response must contain:
+
+```json
+{
+  "enabled": true,
+  "publicKey": "..."
+}
+```
+
+If `enabled` is `false`, Android/iOS cannot receive push notifications regardless of browser permission.
+
+## Android / Chrome
+
+1. Use HTTPS.
+2. Open the production app.
+3. Allow browser notifications.
+4. Keep the app logged in.
+5. The app registers `/sw.js`, waits for the service worker to become ready, creates/reuses the Push subscription and sends it to `/api/push`.
+6. Close the browser/app and send an admin test notification.
+
+## iPhone / iPad
+
+iOS Web Push requires the site to be installed as a Home Screen web app.
+
+1. Open the production site in Safari.
+2. Share → **Add to Home Screen**.
+3. Launch the installed Velvotix app from the Home Screen.
+4. Log in.
+5. Tap **Turn on notifications** and allow the iOS permission prompt.
+6. Send an admin test notification.
+
+The notification can then appear in Notification Center / Lock Screen according to the user's iOS notification settings and Focus modes.
+
+## Important implementation details
+
+- Push registration waits for `navigator.serviceWorker.ready`; it no longer races the initial service-worker registration.
+- Existing subscriptions are reused instead of calling `subscribe()` again and failing with `InvalidStateError`.
+- Every authenticated app start synchronizes the current subscription to the current user.
+- Logout detaches the current device from the old user.
+- Notification sends are awaited before the notification API returns, so serverless runtimes do not lose a fire-and-forget push task.
+- 404/410 push endpoints are removed automatically.
+- Notification clicks focus an existing app window and navigate to the stored notification link, or open the link when no app window exists.

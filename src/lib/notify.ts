@@ -36,7 +36,13 @@ export async function notify(db: Store, aud: Audience, n: { type: string; title:
       await kv.lpushCap(`n:${uid}`, JSON.stringify({ ...item, id: randomUUID() }), CAP, TTL);
       await kv.incr(`nv:${uid}`);
     }));
-    afterResponse(async () => { await Promise.allSettled([...want].map(uid => pushToUser(uid, { title: item.title, body: item.body, url: item.link || '/', tag: item.link || item.type }))); });
+    // Await the push send attempt. This makes the admin test endpoint and
+    // normal business notifications observable/reliable on serverless hosts
+    // where fire-and-forget work can be terminated with the request. Push
+    // failures are still isolated from the business operation.
+    await Promise.allSettled([...want].map(uid =>
+      pushToUser(uid, { title: item.title, body: item.body, url: item.link || '/', tag: item.link || item.type })
+    ));
   } catch (e) { console.error('[notify] failed', e); }
 }
 

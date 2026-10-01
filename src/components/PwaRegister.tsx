@@ -13,7 +13,15 @@ const notify = () => subs.forEach(f => f());
 /** Registers the service worker (production only) and captures the install prompt. Renders nothing. */
 export default function PwaRegister() {
   useEffect(() => {
-    if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+    if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(reg => {
+          // Make a newly installed/updated worker active immediately.
+          reg.update().catch(() => {});
+          window.dispatchEvent(new Event('velvotix-sw-ready'));
+        })
+        .catch(err => console.error('[PWA] service worker registration failed', err));
+    }
     const onPrompt = (e: Event) => { e.preventDefault(); deferred = e as BIPEvent; notify(); };
     const onInstalled = () => { deferred = null; notify(); };
     window.addEventListener('beforeinstallprompt', onPrompt); window.addEventListener('appinstalled', onInstalled);

@@ -3,7 +3,10 @@ import { handler } from '@/lib/api';
 import { pushEnabled, removeSub, saveSub, vapidPublicKey } from '@/lib/push';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const GET = handler([], async () => ({ enabled: pushEnabled(), publicKey: pushEnabled() ? vapidPublicKey() : '' }));
+export const GET = handler([], async () => {
+  const enabled = pushEnabled();
+  return { enabled, publicKey: enabled ? vapidPublicKey() : '' };
+});
 const sub = z.object({ endpoint: z.string().url().max(600), keys: z.object({ p256dh: z.string().max(200), auth: z.string().max(100) }) }).passthrough();
 export const POST = handler([], async ({ auth, req }) => {
   if (!pushEnabled()) return Response.json({ message: 'Push is not configured on the server.' }, { status: 503 });
