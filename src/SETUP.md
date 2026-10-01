@@ -13,4 +13,4 @@
 
 3. Check it: open /api/health -> {"status":"ok","cache":"redis","push":true}
 
-Push needs HTTPS (or localhost) and a production build. On iPhone/iPad, add the app to the Home Screen first.
+Push needs HTTPS (or localhost) and a production build. Every logged-in user can enable notifications from the bell. On iPhone/iPad, add the app to the Home Screen first, then tap Enable Notifications. Test notifications are stored in the bell history and delivered to every registered device for the selected user. The same browser subscription is re-bound after logout/login so one user's notifications cannot leak to another user.
