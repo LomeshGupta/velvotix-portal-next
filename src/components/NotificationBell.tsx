@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Avatar, Badge, Box, Divider, IconButton, List, ListItemAvatar, ListItemButton, ListItemText, Popover, Snackbar, Tooltip, Typography } from '@mui/material';
+import { Alert, Avatar, Badge, Box, Divider, IconButton, List, ListItemAvatar, ListItemButton, ListItemText, Popover, Snackbar, Tooltip, Typography, Switch, FormControlLabel } from '@mui/material';
 import Notifications from '@mui/icons-material/Notifications';
 import NotificationsNone from '@mui/icons-material/NotificationsNone';
 import NotificationsActive from '@mui/icons-material/NotificationsActive';
@@ -112,13 +112,36 @@ export default function NotificationBell({ color }: { color?: 'inherit' }) {
     try {
       if (!serverPush.enabled || !serverPush.publicKey || !authUid) return;
       const reg = await navigator.serviceWorker.ready;
-      const permission = await Notification.requestPermission();
+      let permission = Notification.permission;
+      if (permission !== 'granted') permission = await Notification.requestPermission();
       if (permission !== 'granted') return setPush(permission === 'denied' ? 'denied' : 'off');
       let sub = await reg.pushManager.getSubscription();
       if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(serverPush.publicKey) });
       const r = await fetch('/api/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub), cache: 'no-store' });
       if (r.ok) { sessionStorage.setItem(`pushSynced:${authUid}`, '1'); setPush('on'); }
     } catch { setPush('off'); }
+  };
+
+  const disablePush = async () => {
+    try {
+      if (!('serviceWorker' in navigator)) return;
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = await reg?.pushManager.getSubscription();
+      if (sub) {
+        await fetch('/api/push', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }), cache: 'no-store' });
+        await sub.unsubscribe();
+      }
+      if (authUid) sessionStorage.removeItem(`pushSynced:${authUid}`);
+      setPush('off');
+    } catch {
+      // Keep the UI usable even if device/browser push cleanup fails.
+      setPush('off');
+    }
+  };
+
+  const togglePush = async (_e: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
+    if (checked) await enablePush();
+    else await disablePush();
   };
 
   const post = async (body: object) => { const r = await fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); if (r.ok) apply(await r.json()); };
@@ -153,6 +176,11 @@ export default function NotificationBell({ color }: { color?: 'inherit' }) {
       slotProps={{ paper: { sx: { width: { xs: 'calc(100vw - 16px)', sm: 400 }, maxHeight: '70vh', display: 'flex', flexDirection: 'column', borderRadius: 3, overflow: 'hidden' } } }}>
       <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', background: 'linear-gradient(90deg,#0d47a1,#1565c0)', color: '#fff' }}>
         <Notifications fontSize="small" /><Typography fontWeight={700} sx={{ ml: 1, flexGrow: 1 }}>Notifications{unread ? ` (${unread})` : ''}</Typography>
+        <FormControlLabel
+          sx={{ m: 0, mr: 0.5, color: '#fff', '& .MuiFormControlLabel-label': { fontSize: 12, fontWeight: 600 } }}
+          label={push === 'on' ? 'On' : 'Off'}
+          control={<Switch size="small" checked={push === 'on'} disabled={!canPush || push === 'denied'} onChange={togglePush} sx={{ '& .MuiSwitch-track': { backgroundColor: 'rgba(255,255,255,.55)' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#90caf9' } }} />}
+        />
         <Button size="small" color="inherit" disabled={!unread} onClick={() => post({ action: 'readAll' })}>Mark all read</Button>
       </Box>
       {canPush && push !== 'on' && <Alert severity={push === 'denied' ? 'warning' : 'info'} icon={<NotificationsActive fontSize="small" />} sx={{ borderRadius: 0 }}
