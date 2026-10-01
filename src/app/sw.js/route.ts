@@ -1,4 +1,4 @@
-export const dynamic = 'force-static';
+export const dynamic = "force-static";
 const SW = `
 const VERSION = 'v2';
 const CACHE = 'velvotix-static-' + VERSION;
@@ -31,12 +31,32 @@ self.addEventListener('push', e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (_) { d = { title: 'Velvotix Portal', body: e.data ? e.data.text() : '' }; }
   e.waitUntil((async () => {
-    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    wins.forEach(c => c.postMessage({ type: 'notif' })); // open tabs refresh their bell immediately
-    if (wins.some(c => c.visibilityState === 'visible' && c.focused)) return; // user is looking at the app: the in-app toast covers it
-    await self.registration.showNotification(d.title || 'Velvotix Portal', {
-      body: d.body || '', icon: '/pwa-icon?s=192', badge: '/pwa-icon?s=192', tag: d.tag || undefined, renotify: !!d.tag, data: { url: d.url || '/' },
-    });
+    const wins = await self.clients.matchAll({
+  type: 'window',
+  includeUncontrolled: true
+});
+
+// Refresh the in-app notification bell/list.
+wins.forEach(c =>
+  c.postMessage({ type: 'notif' })
+);
+
+// Always show the system notification.
+// This allows Admin → Test Notification to be
+// visible even when the app is currently open.
+await self.registration.showNotification(
+  d.title || 'Velvotix Portal',
+  {
+    body: d.body || '',
+    icon: '/pwa-icon?s=192',
+    badge: '/pwa-icon?s=192',
+    tag: d.tag || undefined,
+    renotify: true,
+    data: {
+      url: d.url || '/'
+    }
+  }
+);
   })());
 });
 self.addEventListener('notificationclick', e => {
@@ -50,5 +70,11 @@ self.addEventListener('notificationclick', e => {
 });
 `;
 export function GET() {
-  return new Response(SW, { headers: { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Service-Worker-Allowed': '/' } });
+  return new Response(SW, {
+    headers: {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Service-Worker-Allowed": "/",
+    },
+  });
 }
