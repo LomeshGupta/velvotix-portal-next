@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Avatar, Badge, Box, Divider, IconButton, List, ListItemAvatar, ListItemButton, ListItemText, Popover, Snackbar, Tooltip, Typography, Switch, FormControlLabel } from '@mui/material';
+import { Alert, Avatar, Badge, Box, Divider, IconButton, List, ListItemAvatar, ListItemButton, ListItemText, Popover, Snackbar, Tooltip, Typography } from '@mui/material';
 import Notifications from '@mui/icons-material/Notifications';
 import NotificationsNone from '@mui/icons-material/NotificationsNone';
 import NotificationsActive from '@mui/icons-material/NotificationsActive';
@@ -42,7 +42,7 @@ export async function detachPush() {
 export default function NotificationBell({ color }: { color?: 'inherit' }) {
   const router = useRouter();
   const [items, setItems] = useState<N[]>([]); const [unread, setUnread] = useState(0); const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const [toast, setToast] = useState<N | null>(null); const [push, setPush] = useState<'unsupported' | 'off' | 'on' | 'denied'>('unsupported'); const [serverPush, setServerPush] = useState<{ enabled: boolean; publicKey: string }>({ enabled: false, publicKey: '' }); const [authUid, setAuthUid] = useState<string | null>(null);
+  const [toast, setToast] = useState<N | null>(null); const [push, setPush] = useState<'unsupported' | 'off' | 'on' | 'denied'>('unsupported'); const [serverPush, setServerPush] = useState<{ enabled: boolean; publicKey: string }>({ enabled: false, publicKey: '' });
   const ver = useRef<number | undefined>(undefined); const last = useRef(0); const first = useRef(true); const stopped = useRef(false);
 
   const apply = useCallback((j: { v: number; changed?: boolean; unread?: number; items?: N[] }) => {
@@ -72,76 +72,32 @@ export default function NotificationBell({ color }: { color?: 'inherit' }) {
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', vis); window.removeEventListener('online', load); navigator.serviceWorker?.removeEventListener('message', msg); };
   }, [load]);
 
-  useEffect(() => { // push status; always bind the current browser subscription to the CURRENT login
-    let cancelled = false;
+  useEffect(() => { // push status; silently re-registers this device once per session so the server never loses it
     (async () => {
-      try {
-        const meRes = await fetch('/api/auth/me', { headers: BG, cache: 'no-store' });
-        if (!meRes.ok) return;
-        const me = await meRes.json() as { id?: string };
-        if (cancelled || !me.id) return;
-        setAuthUid(me.id);
-        const syncKey = `pushSynced:${me.id}`;
-        if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
-          setPush('unsupported');
-          return;
-        }
-        const reg = await navigator.serviceWorker.ready;
-        const r = await fetch('/api/push', { headers: BG, cache: 'no-store' });
-        if (!r.ok) return;
-        const cfg = await r.json() as { enabled: boolean; publicKey: string };
-        if (cancelled) return;
-        setServerPush(cfg);
-        if (!cfg.enabled || !cfg.publicKey) return;
-        if (Notification.permission === 'denied') return setPush('denied');
-        if (Notification.permission !== 'granted') return setPush('off');
-        let sub = await reg.pushManager.getSubscription();
-        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(cfg.publicKey) });
-        // Do not rely on a generic sessionStorage flag: the same browser can log out
-        // and into another account. The server must bind the subscription to this uid.
-        if (!sessionStorage.getItem(syncKey)) {
-          const saved = await fetch('/api/push', { method: 'POST', headers: { 'Content-Type': 'application/json', ...BG }, body: JSON.stringify(sub), cache: 'no-store' });
-          if (saved.ok) sessionStorage.setItem(syncKey, '1');
-        }
-        if (!cancelled) setPush('on');
-      } catch { /* notifications are optional and must never break the app */ }
-    })();
-    return () => { cancelled = true; };
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
+      const reg = await navigator.serviceWorker.getRegistration(); if (!reg) return;
+      const r = await fetch('/api/push', { headers: BG }); if (!r.ok) return;
+      const cfg = await r.json(); setServerPush(cfg); if (!cfg.enabled) return;
+      if (Notification.permission === 'denied') return setPush('denied');
+      if (Notification.permission !== 'granted') return setPush('off');
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(cfg.publicKey) });
+      // Always sync the current subscription after login/app restart. The server binds
+      // an endpoint to exactly one authenticated user, so this also safely handles
+      // switching accounts in the same browser. Do not rely on sessionStorage here.
+      const sync = await fetch('/api/push', { method: 'POST', headers: { 'Content-Type': 'application/json', ...BG }, body: JSON.stringify(sub) });
+      if (sync.ok) sessionStorage.setItem('pushSynced', '1');
+      setPush('on');
+    })().catch(() => {});
   }, []);
   const enablePush = async () => {
     try {
-      if (!serverPush.enabled || !serverPush.publicKey || !authUid) return;
       const reg = await navigator.serviceWorker.ready;
-      let permission = Notification.permission;
-      if (permission !== 'granted') permission = await Notification.requestPermission();
-      if (permission !== 'granted') return setPush(permission === 'denied' ? 'denied' : 'off');
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(serverPush.publicKey) });
-      const r = await fetch('/api/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub), cache: 'no-store' });
-      if (r.ok) { sessionStorage.setItem(`pushSynced:${authUid}`, '1'); setPush('on'); }
+      if ((await Notification.requestPermission()) !== 'granted') return setPush(Notification.permission === 'denied' ? 'denied' : 'off');
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(serverPush.publicKey) });
+      const r = await fetch('/api/push', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub) });
+      if (r.ok) { sessionStorage.setItem('pushSynced', '1'); setPush('on'); }
     } catch { setPush('off'); }
-  };
-
-  const disablePush = async () => {
-    try {
-      if (!('serviceWorker' in navigator)) return;
-      const reg = await navigator.serviceWorker.getRegistration();
-      const sub = await reg?.pushManager.getSubscription();
-      if (sub) {
-        await fetch('/api/push', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }), cache: 'no-store' });
-        await sub.unsubscribe();
-      }
-      if (authUid) sessionStorage.removeItem(`pushSynced:${authUid}`);
-      setPush('off');
-    } catch {
-      // Keep the UI usable even if device/browser push cleanup fails.
-      setPush('off');
-    }
-  };
-
-  const togglePush = async (_e: React.ChangeEvent<HTMLInputElement>, checked: boolean) => {
-    if (checked) await enablePush();
-    else await disablePush();
   };
 
   const post = async (body: object) => { const r = await fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); if (r.ok) apply(await r.json()); };
@@ -176,20 +132,11 @@ export default function NotificationBell({ color }: { color?: 'inherit' }) {
       slotProps={{ paper: { sx: { width: { xs: 'calc(100vw - 16px)', sm: 400 }, maxHeight: '70vh', display: 'flex', flexDirection: 'column', borderRadius: 3, overflow: 'hidden' } } }}>
       <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', background: 'linear-gradient(90deg,#0d47a1,#1565c0)', color: '#fff' }}>
         <Notifications fontSize="small" /><Typography fontWeight={700} sx={{ ml: 1, flexGrow: 1 }}>Notifications{unread ? ` (${unread})` : ''}</Typography>
-        <FormControlLabel
-          sx={{ m: 0, mr: 0.5, color: '#fff', '& .MuiFormControlLabel-label': { fontSize: 12, fontWeight: 600 } }}
-          label={push === 'on' ? 'On' : 'Off'}
-          control={<Switch size="small" checked={push === 'on'} disabled={!canPush || push === 'denied'} onChange={togglePush} sx={{ '& .MuiSwitch-track': { backgroundColor: 'rgba(255,255,255,.55)' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#90caf9' } }} />}
-        />
         <Button size="small" color="inherit" disabled={!unread} onClick={() => post({ action: 'readAll' })}>Mark all read</Button>
       </Box>
-      {canPush && push !== 'on' && <Alert severity={push === 'denied' ? 'warning' : 'info'} icon={<NotificationsActive fontSize="small" />} sx={{ borderRadius: 0 }}
-        action={push === 'off' ? <Button size="small" onClick={enablePush}>Enable Notifications</Button> : undefined}>
-        {push === 'denied' ? 'Notifications are blocked. Enable them in this site/browser settings, then return here.' : 'Enable notifications to receive instant alerts on web, Android and installed iPhone/iPad apps.'}
-      </Alert>}
-      {push === 'unsupported' && <Alert severity="warning" icon={<NotificationsActive fontSize="small" />} sx={{ borderRadius: 0 }}>
-        This browser does not support push notifications. On iPhone/iPad, open the site in Safari and add it to the Home Screen first.
-      </Alert>}
+      {canPush && push !== 'on' && <Alert severity="info" icon={<NotificationsActive fontSize="small" />} sx={{ borderRadius: 0 }}
+        action={push === 'off' ? <Button size="small" onClick={enablePush}>Enable</Button> : undefined}>
+        {push === 'denied' ? 'Alerts are blocked in your browser settings for this site.' : 'Get alerts even when the app is closed.'}</Alert>}
       <List disablePadding sx={{ overflowY: 'auto' }}>
         {items.length === 0 && <Box sx={{ py: 6, textAlign: 'center', color: 'text.secondary' }}><NotificationsNone sx={{ fontSize: 44, opacity: 0.4 }} /><Typography>You are all caught up</Typography></Box>}
         {items.map((n, i) => { const s = style(n.type); return (<Box key={n.id}>

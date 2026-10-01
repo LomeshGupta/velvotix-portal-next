@@ -13,4 +13,14 @@
 
 3. Check it: open /api/health -> {"status":"ok","cache":"redis","push":true}
 
-Push needs HTTPS (or localhost) and a production build. Every logged-in user can enable notifications from the bell. On iPhone/iPad, add the app to the Home Screen first, then tap Enable Notifications. Test notifications are stored in the bell history and delivered to every registered device for the selected user. The same browser subscription is re-bound after logout/login so one user's notifications cannot leak to another user.
+Push needs HTTPS (or localhost) and a production build. On iPhone/iPad, add the app to the Home Screen first.
+
+## Production notification / persistent-session verification
+
+- Authentication uses a rolling 30-day session. Active users remain signed in until they explicitly use Logout; inactivity beyond the session window requires sign-in again.
+- Web Push subscriptions are synchronized on every authenticated app startup/login, so closing/reopening the browser or installed PWA does not lose the device registration.
+- Each push endpoint is bound to one authenticated user. Logging out removes the current device endpoint from that user before the auth cookie is cleared.
+- Closed/background delivery requires valid VAPID keys and a browser/PWA that supports Web Push.
+- iPhone/iPad: open the site in Safari, choose **Add to Home Screen**, launch the installed Velvotix app, then enable Notifications and allow the iOS permission prompt. iOS Web Push delivery to Notification Center/Lock Screen depends on the installed Home Screen PWA and OS permission.
+- Notification click routing uses the notification's stored `link`/`url`. The service worker focuses an existing app window and navigates it, or opens a new app window when none exists.
+- Admin test notifications use the normal notification pipeline, so they are persisted in the bell/history and sent to all registered devices for the selected active user.

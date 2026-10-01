@@ -8,6 +8,6 @@ export const POST = handler(null, async ({ db, req }) => {
   if (!u || u.active !== 'true' || (b.portal === 'customer') !== (u.role === 'CUSTOMER') || !(await bcrypt.compare(b.password, u.passwordHash)))
     return Response.json({ message: 'Invalid email or password.' }, { status: 401 });
   const p: Auth = { uid: u.id, role: u.role, customerId: u.customerId };
-  (await cookies()).set('token', jwt.sign(p, SECRET(), { expiresIn: '8h' }), { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 8 * 3600 });
+  (await cookies()).set('token', jwt.sign(p, SECRET(), { expiresIn: '30d' }), { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 30 * 24 * 3600 });
   return { id: u.id, name: u.name, role: u.role, customerId: u.customerId };
 });

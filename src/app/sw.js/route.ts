@@ -1,6 +1,6 @@
 export const dynamic = 'force-static';
 const SW = `
-const VERSION = 'v3-notifications';
+const VERSION = 'v2';
 const CACHE = 'velvotix-static-' + VERSION;
 const OFFLINE = '/offline';
 self.addEventListener('install', e => {

@@ -359,6 +359,20 @@ type Ctx = {
             );
           }
           auth = { uid: auth.uid, role: account.role, customerId: account.customerId || "" };
+
+          // Sliding persistent session: active users remain signed in until Logout.
+          // The token is refreshed on authenticated requests instead of expiring after a
+          // fixed short window such as the previous 8-hour session.
+          const refreshedToken = jwt.sign(auth, SECRET(), { expiresIn: "30d" });
+          const cookieStore = await cookies();
+          cookieStore.set("token", refreshedToken, {
+            httpOnly: true,
+            sameSite: "lax",
+            secure: process.env.NODE_ENV === "production",
+            path: "/",
+            maxAge: 30 * 24 * 3600,
+          });
+
           if (roles.length > 0 && !roles.includes(auth.role)) {
             return NextResponse.json(
               { message: "Not permitted." },
